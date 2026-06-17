@@ -50,26 +50,6 @@ export class ConfigService {
     return process.env.API_URL || 'http://localhost:4000';
   }
 
-  get mailHost(): string {
-    return process.env.MAIL_HOST || 'localhost';
-  }
-
-  get mailPort(): number {
-    return parseInt(process.env.MAIL_PORT || '1025', 10);
-  }
-
-  get mailUser(): string {
-    return process.env.MAIL_USER || '';
-  }
-
-  get mailPass(): string {
-    return process.env.MAIL_PASS || '';
-  }
-
-  get mailFrom(): string {
-    return process.env.MAIL_FROM || 'noreply@sohaara.com';
-  }
-
   get storageProvider(): string {
     return process.env.STORAGE_PROVIDER || 'local';
   }

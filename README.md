@@ -19,7 +19,7 @@ A self-hosted, production-grade LMS built for organizations that need full contr
 - **Analytics** — org-level and user-level dashboards, exportable reports
 - **AI** *(optional)* — question generation, summarization, course recommendations (provider-agnostic; bring your own API key)
 - **Search** — full-text cross-entity search powered by Meilisearch
-- **Notifications** — in-app bell + email (Mailpit for local dev)
+- **Notifications** — in-app bell with per-user preferences
 
 ---
 
@@ -33,7 +33,6 @@ A self-hosted, production-grade LMS built for organizations that need full contr
 | Cache / Queue | Redis 7, BullMQ |
 | Search | Meilisearch v1.12 |
 | Object Storage | MinIO (S3-compatible) |
-| Mail | Mailpit (local dev) |
 | Monorepo | pnpm workspaces |
 | Containerization | Docker Compose |
 
@@ -71,7 +70,6 @@ This brings up eight containers:
 | Meilisearch | 7700 | `localhost:7700` |
 | MinIO API | 9000 | `localhost:9000` |
 | MinIO Console | 9001 | `localhost:9001` |
-| Mailpit | 1025 / 8025 | `localhost:8025` |
 | **API** | 4000 | http://localhost:4000/api/v1/health |
 | **Web App** | 3000 | http://localhost:3000 |
 | **Admin Panel** | 3001 | http://localhost:3001 |
@@ -131,7 +129,7 @@ sohaara-lms/
 If you prefer to run Node locally and only Docker the databases:
 
 ```bash
-docker compose up -d postgres redis meilisearch minio mailpit
+docker compose up -d postgres redis meilisearch minio
 pnpm install
 pnpm db:generate
 pnpm db:push
@@ -180,7 +178,6 @@ Key variables (with safe dev defaults already set in `docker-compose.yml`):
 | `MEILISEARCH_URL` / `MEILISEARCH_KEY` | Search backend |
 | `MINIO_*` | Object storage credentials |
 | `JWT_SECRET` | **Change for production** |
-| `MAIL_HOST` / `MAIL_PORT` | SMTP (Mailpit in dev) |
 | `APP_URL` / `ADMIN_URL` / `API_URL` | Public-facing URLs |
 
 ---
