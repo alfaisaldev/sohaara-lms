@@ -1,0 +1,8 @@
+# Force LF for shell scripts. Compose / docker / alpine busybox sh all assume
+# LF; CRLF silently breaks the shebang and turns `set -e` into `set -e\r`
+# which the shell rejects with "invalid option".
+*.sh  text eol=lf
+
+# Same for SQL migrations — postgres parses them line-by-line and CRLF can
+# cause issues with string literals.
+*.sql text eol=lf
