@@ -79,9 +79,6 @@ services:
       dockerfile: .docker/api.Dockerfile
     container_name: sohaara-api
     restart: unless-stopped
-    # Override Dockerfile CMD — the Dockerfile's path is stale (nest build
-    # with rootDir: ../.. emits to apps/api/dist/apps/api/src/main.js).
-    command: ["node", "apps/api/dist/apps/api/src/main"]
     ports:
       - "4000:4000"
     environment:

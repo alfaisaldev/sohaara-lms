@@ -32,4 +32,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 USER nestjs
 EXPOSE 4000
-CMD ["node", "apps/api/dist/main"]
+CMD ["node", "apps/api/dist/apps/api/src/main"]
