@@ -78,6 +78,11 @@ services:
   # MinIO does not auto-create buckets on write, so the first upload would
   # 404. This service waits for MinIO to be healthy, runs `mc mb --ignore-existing`
   # against the bucket the API expects, then exits. Idempotent on re-runs.
+  #
+  # The init logic lives in .docker/minio-init.sh. We bind-mount it into the
+  # minio/mc image (which already ships `mc`) and exec it directly — compose's
+  # own `command:` parser splits multi-statement shell strings on `&&`, so an
+  # inlined `mc alias set ... && mc mb ... && echo ...` would get truncated.
   minio-init:
     image: minio/mc:latest
     container_name: sohaara-minio-init
@@ -92,10 +97,9 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_BUCKET: sohaara-lms
       MINIO_USE_SSL: "false"
-    # Single-line command (no multi-line `|` quoting tricks) so $MINIO_BUCKET
-    # expands cleanly in the shell that runs inside the minio/mc image.
-    entrypoint: ["/bin/sh", "-c"]
-    command: 'mc alias set local http://$$MINIO_ENDPOINT $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$MINIO_BUCKET && echo "[minio-init] bucket $$MINIO_BUCKET ready"'
+    volumes:
+      - ./.docker/minio-init.sh:/minio-init.sh:ro
+    command: ["/bin/sh", "/minio-init.sh"]
     restart: "no"
 
   # ─── API ───
