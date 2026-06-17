@@ -119,6 +119,9 @@ importers:
       '@nestjs/throttler':
         specifier: ^6.5.0
         version: 6.5.0(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.26)(reflect-metadata@0.2.2)
+      '@prisma/client':
+        specifier: ^6.1.0
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       '@sohaara/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
@@ -297,6 +300,9 @@ importers:
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.7)
+      mime-types:
+        specifier: ^3.0.1
+        version: 3.0.2
       next:
         specifier: ^16.0.0
         version: 16.2.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

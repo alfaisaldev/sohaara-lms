@@ -23,6 +23,7 @@
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^11.0.2",
     "@nestjs/throttler": "^6.5.0",
+    "@prisma/client": "^6.1.0",
     "@sohaara/analytics": "workspace:*",
     "@sohaara/auth": "workspace:*",
     "@sohaara/database": "workspace:*",
