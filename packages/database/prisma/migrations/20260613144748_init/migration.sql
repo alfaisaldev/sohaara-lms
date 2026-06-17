@@ -2,7 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- CreateExtension
-CREATE EXTENSION IF NOT EXISTS "uuid_ossp";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- CreateTable
 CREATE TABLE "organizations" (

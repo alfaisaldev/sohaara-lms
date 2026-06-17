@@ -10,6 +10,14 @@ start*.ps1
 *.tsbuildinfo
 temp/
 
+# Docker service data dirs (bind-mounted from .docker/). Safe to delete for a
+# clean reset; the bootstrap service will re-create the DB and the minio-init
+# service will re-create the bucket on next `docker compose up`.
+.docker/postgres/
+.docker/redis/
+.docker/meilisearch/
+.docker/minio/
+
 # User uploads (keep .gitkeep to preserve dir structure)
 apps/api/uploads/avatars/**
 apps/api/uploads/videos/**

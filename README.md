@@ -40,13 +40,12 @@ A self-hosted, production-grade LMS built for organizations that need full contr
 
 ## Quick Start (Docker)
 
-The fastest way to run the full stack locally:
+The fastest way to run the full stack locally. **One command** brings up the database, applies migrations, seeds the super admin, creates the MinIO bucket, and starts every app.
 
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose on Linux)
-- Node.js 20+
-- pnpm 9+
+- Node.js 20+ and pnpm 9+ — **only required for the local-dev (no-Docker) workflow** below
 
 ### 1. Clone
 
@@ -55,69 +54,63 @@ git clone https://github.com/alfaisaldev/sohaara-lms.git
 cd sohaara-lms
 ```
 
-### 2. Start services
+### 2. Start the stack
 
 ```bash
 docker compose up -d --build
 ```
 
-This brings up eight containers:
+That's it. On first run this:
 
-| Service | Port | URL |
-|---|---|---|
-| PostgreSQL | 5432 | `localhost:5432` |
-| Redis | 6379 | `localhost:6379` |
-| Meilisearch | 7700 | `localhost:7700` |
-| MinIO API | 9000 | `localhost:9000` |
-| MinIO Console | 9001 | `localhost:9001` |
-| **API** | 4000 | http://localhost:4000/api/v1/health |
-| **Web App** | 3000 | http://localhost:3000 |
-| **Admin Panel** | 3001 | http://localhost:3001 |
+1. Pulls / builds all images
+2. Starts PostgreSQL, Redis, Meilisearch, MinIO (with healthchecks)
+3. Runs `sohaara-minio-init` to create the S3 bucket the API expects
+4. The `sohaara-api` entrypoint runs `prisma migrate deploy` + seeds the database, then starts the Nest server
+5. Starts the API, Web App, and Admin Panel (each with its own healthcheck)
 
-### 3. Initialize the database (one-time)
+Watch the api's bootstrap step with `docker compose logs -f api`. The whole process takes 2–5 minutes on a clean machine.
 
-```bash
-docker compose exec api sh -c "pnpm db:generate && pnpm db:push && pnpm db:seed"
-```
+### 3. Open the apps
 
-This generates the Prisma client, pushes the schema, and seeds the super admin + roles + feature flags + sample courses.
+| App | URL |
+|---|---|
+| Web App (learner) | http://localhost:3000 |
+| Admin Panel | http://localhost:3001 |
+| API | http://localhost:4000 |
+| API docs (Swagger) | http://localhost:4000/api/docs |
+| MinIO Console | http://localhost:9001 |
+| Meilisearch | http://localhost:7700 |
 
 ### 4. Sign in
 
-Default seeded admin credentials (see [`packages/database/src/seed.ts`](packages/database/src/seed.ts) for the exact values):
-
 ```
 Email:    admin@sohaara.com
-Password: Admin@123
+Password: Admin123!
 ```
 
 > Change the seeded admin password immediately for any non-local environment.
 
----
+### Container map
 
-## Project Structure
+| Service | Purpose | Restart policy |
+|---|---|---|
+| `sohaara-postgres` | PostgreSQL 16 | unless-stopped |
+| `sohaara-redis` | Redis 7 | unless-stopped |
+| `sohaara-meilisearch` | Meilisearch v1.12 | unless-stopped |
+| `sohaara-minio` | S3-compatible object store | unless-stopped |
+| `sohaara-minio-init` | One-shot: creates the bucket | runs once, exits |
+| `sohaara-api` | NestJS API (entrypoint runs migrations + seed, then `exec`s the server) | unless-stopped |
+| `sohaara-web` | Next.js learner app (standalone) | unless-stopped |
+| `sohaara-admin` | Next.js admin panel (standalone) | unless-stopped |
 
-```
-sohaara-lms/
-├── apps/
-│   ├── api/          NestJS API (22 modules)
-│   ├── web/          Next.js learner-facing app
-│   └── admin/        Next.js admin panel
-├── packages/
-│   ├── analytics/    shared analytics helpers
-│   ├── auth/         auth utilities (JWT, guards)
-│   ├── config/       environment config wrapper
-│   ├── database/     Prisma schema (38 models) + seed
-│   ├── notifications/
-│   ├── search/       Meilisearch helpers
-│   ├── shared/       shared types/utilities
-│   ├── storage/      MinIO / S3 helpers
-│   ├── types/        cross-package TypeScript types
-│   └── ui/           shared design-system components
-├── scripts/          operational scripts (seed-courses, etc.)
-├── .docker/          Dockerfiles for each app
-├── docker-compose.yml
-└── package.json
+### Reset everything
+
+To start from a totally clean slate (drops the DB, clears caches, wipes MinIO, etc.):
+
+```bash
+docker compose down -v
+rm -rf .docker/postgres .docker/redis .docker/meilisearch .docker/minio
+docker compose up -d --build
 ```
 
 ---
@@ -160,6 +153,36 @@ pnpm docker:down       # docker compose down
 
 ---
 
+## Project Structure
+
+```
+sohaara-lms/
+├── apps/
+│   ├── api/          NestJS API (22 modules)
+│   ├── web/          Next.js learner-facing app
+│   └── admin/        Next.js admin panel
+├── packages/
+│   ├── analytics/    shared analytics helpers
+│   ├── auth/         auth utilities (JWT, guards)
+│   ├── config/       environment config wrapper
+│   ├── database/     Prisma schema (38 models) + seed + migrations
+│   ├── notifications/
+│   ├── search/       Meilisearch helpers
+│   ├── shared/       shared types/utilities
+│   ├── storage/      MinIO / S3 helpers
+│   ├── types/        cross-package TypeScript types
+│   └── ui/           shared design-system components
+├── scripts/          operational scripts (seed-courses, etc.)
+├── .docker/          Dockerfiles + entrypoint scripts
+│   ├── api.Dockerfile / web.Dockerfile / admin.Dockerfile
+│   ├── entrypoint.sh  # runs migrations + seed, then exec's the nest server
+│   └── minio-init.sh  # creates the bucket (used by the minio/mc init container)
+├── docker-compose.yml
+└── package.json
+```
+
+---
+
 ## Environment Variables
 
 The repo ships with `.env.example` at the root and in `apps/api/`. Copy them to `.env` if you need to override the defaults baked into `docker-compose.yml`:
@@ -188,10 +211,11 @@ The shipped `docker-compose.yml` is for **local development only**. Before deplo
 
 - Rotate `JWT_SECRET` to a long random value
 - Enable CSRF protection
-- Set up real mail (S provider), real S3 (not MinIO), real Meilisearch or another search backend
+- Set up real mail, real S3 (not MinIO), real Meilisearch or another search backend
 - Set secure values for `MINIO_*` and `MEILISEARCH_KEY`
 - Put a reverse proxy (nginx / Caddy / Traefik) in front with TLS
 - Configure proper backups for PostgreSQL
+- Generate a fresh Prisma migration any time you change `schema.prisma` (`pnpm db:migrate` locally) and commit the new file under `packages/database/prisma/migrations/`
 
 ---
 

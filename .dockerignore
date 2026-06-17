@@ -15,6 +15,11 @@ build
 # Local data / uploads
 uploads
 .docker
+# Whitelist: bake the entrypoint + minio-init scripts into the api image.
+# (`.docker` is excluded above to drop data dirs; the scripts still need to
+# reach the build context.)
+!.docker/entrypoint.sh
+!.docker/minio-init.sh
 *.log
 npm-debug.log*
 yarn-debug.log*

@@ -25,11 +25,20 @@ FROM base AS runner
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
+# wget is used by the api container's healthcheck. postgresql-client provides
+# `pg_isready` which the entrypoint uses as a fast, battle-tested probe for
+# whether Postgres is accepting connections (faster than spawning a node
+# child process per attempt).
+RUN apk add --no-cache wget postgresql-client
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/
 COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+# Bake the entrypoint script in. It runs migrations + seed (idempotent) and
+# then `exec`s the actual nest server, so it becomes PID 1 and gets signals.
+COPY --from=builder /app/.docker/entrypoint.sh /app/.docker/entrypoint.sh
+RUN chmod +x /app/.docker/entrypoint.sh
 USER nestjs
 EXPOSE 4000
-CMD ["node", "apps/api/dist/apps/api/src/main"]
+CMD ["/app/.docker/entrypoint.sh"]

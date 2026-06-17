@@ -17,13 +17,20 @@ RUN pnpm --filter @sohaara/web run build
 
 FROM base AS runner
 WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
-COPY --from=builder /app/apps/web/.next ./apps/web/.next
-COPY --from=builder /app/apps/web/public ./apps/web/public
-COPY --from=builder /app/apps/web/package.json ./apps/web/
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+# wget is used by the container's healthcheck.
+RUN apk add --no-cache wget
+# Standalone server bundle (server.js + minimal .next + bundled node_modules).
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+# Static chunks must live at apps/web/.next/static relative to the cwd where
+# the standalone server runs, otherwise asset URLs 404 and the client never
+# hydrates past its loading shell.
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 USER nextjs
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@sohaara/web", "start"]
+CMD ["node", "apps/web/server.js"]

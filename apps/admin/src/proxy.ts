@@ -3,14 +3,19 @@ import { NextRequest, NextResponse } from 'next/server';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const API_ORIGIN = new URL(API_URL).origin;
 
-function buildCsp(nonce: string): string {
+// No nonce in script-src: see web/src/middleware.ts for the full explanation.
+// The previous shape combined 'unsafe-inline' with a per-request nonce, and
+// the CSP spec ignores 'unsafe-inline' when a nonce is present, so every
+// Next.js inline RSC <script> was blocked and the page hung on its loading
+// shell.
+function buildCsp(): string {
   return [
     `default-src 'self'`,
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'nonce-${nonce}'`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' blob: data: ${API_ORIGIN}`,
     `font-src 'self' data:`,
-    `connect-src 'self' ${API_ORIGIN} ws:`,
+    `connect-src 'self' ${API_ORIGIN} ws: wss:`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
@@ -28,7 +33,6 @@ const securityHeaders = [
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const nonce = crypto.randomUUID();
   const response = NextResponse.next();
 
   if (pathname.startsWith('/admin') && pathname !== '/admin/login') {
@@ -38,8 +42,7 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  response.headers.set('Content-Security-Policy', buildCsp(nonce));
-  response.headers.set('x-nonce', nonce);
+  response.headers.set('Content-Security-Policy', buildCsp());
 
   for (const h of securityHeaders) {
     response.headers.set(h.key, h.value);
