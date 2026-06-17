@@ -99,6 +99,12 @@ services:
       MINIO_USE_SSL: "false"
     volumes:
       - ./.docker/minio-init.sh:/minio-init.sh:ro
+    # The minio/mc image ships with `mc` as its entrypoint, so without an
+    # explicit override our `command:` would become args to `mc` (e.g.
+    # `mc /bin/sh /minio-init.sh`, which fails with "command not recognized").
+    # Setting `entrypoint: []` clears it, then the explicit list-form command
+    # becomes the actual argv.
+    entrypoint: []
     command: ["/bin/sh", "/minio-init.sh"]
     restart: "no"
 
