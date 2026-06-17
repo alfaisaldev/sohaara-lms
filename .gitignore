@@ -1,0 +1,33 @@
+node_modules/
+.next/
+dist/
+.turbo/
+*.log
+.env
+.env.local
+check-*.js
+start*.ps1
+*.tsbuildinfo
+temp/
+
+# User uploads (keep .gitkeep to preserve dir structure)
+apps/api/uploads/avatars/**
+apps/api/uploads/videos/**
+apps/api/uploads/documents/**
+apps/api/uploads/scorm/**
+apps/api/uploads/other/**
+apps/api/uploads/certificates/**
+
+# AI coding-agent tooling (kept on disk, not uploaded)
+.opencode/
+opencode.json
+.claude/
+AGENTS.md
+CREDENTIALS.txt
+
+# Root-level user uploads — preserve directory structure with .gitkeep, ignore contents
+uploads/**
+!uploads/
+!uploads/*/
+!uploads/.gitkeep
+!uploads/*/.gitkeep

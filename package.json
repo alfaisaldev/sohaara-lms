@@ -1,0 +1,30 @@
+{
+  "name": "sohaara-lms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise Learning Management System by Sohaara",
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "dev:apps": "node start.js",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "clean": "pnpm -r run clean",
+    "db:generate": "pnpm --filter @sohaara/database run generate",
+    "db:push": "pnpm --filter @sohaara/database run push",
+    "db:migrate": "pnpm --filter @sohaara/database run migrate",
+    "db:seed": "pnpm --filter @sohaara/database run seed",
+    "db:studio": "pnpm --filter @sohaara/database run studio",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "setup": "pnpm install && pnpm db:generate && pnpm db:push && pnpm db:seed"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

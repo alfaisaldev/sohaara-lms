@@ -1,0 +1,186 @@
+services:
+  # ─── PostgreSQL ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: sohaara-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sohaara_lms
+      POSTGRES_USER: sohaara
+      POSTGRES_PASSWORD: sohaara
+    volumes:
+      - .docker/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sohaara -d sohaara_lms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───
+  redis:
+    image: redis:7-alpine
+    container_name: sohaara-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - .docker/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Meilisearch ───
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: sohaara-meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: sohaara-master-key
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: development
+    volumes:
+      - .docker/meilisearch:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MinIO ───
+  minio:
+    image: minio/minio:latest
+    container_name: sohaara-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: sohaara
+      MINIO_ROOT_PASSWORD: sohaara-secret-key
+    command: server /data --console-address ":9001"
+    volumes:
+      - .docker/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Mailpit ───
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: sohaara-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    volumes:
+      - .docker/mailpit:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "-", "http://localhost:8025/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── API ───
+  api:
+    build:
+      context: .
+      dockerfile: .docker/api.Dockerfile
+    container_name: sohaara-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://sohaara:sohaara@postgres:5432/sohaara_lms?schema=public
+      REDIS_URL: redis://redis:6379
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: sohaara-master-key
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: sohaara
+      MINIO_SECRET_KEY: sohaara-secret-key
+      MINIO_BUCKET: sohaara-lms
+      MINIO_USE_SSL: "false"
+      JWT_SECRET: dev-jwt-secret-do-not-use-in-production
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: sohaara-lms
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      MAIL_FROM: noreply@sohaara.com
+      APP_URL: http://localhost:3000
+      ADMIN_URL: http://localhost:3001
+      API_URL: http://localhost:4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/packages/database/node_modules
+
+  # ─── Web App ───
+  web:
+    build:
+      context: .
+      dockerfile: .docker/web.Dockerfile
+    container_name: sohaara-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    depends_on:
+      - api
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/ui/node_modules
+
+  # ─── Admin Panel ───
+  admin:
+    build:
+      context: .
+      dockerfile: .docker/admin.Dockerfile
+    container_name: sohaara-admin
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+    depends_on:
+      - api
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/admin/node_modules
+      - /app/packages/ui/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
+  meilisearch_data:
+  minio_data:
+  mailpit_data:

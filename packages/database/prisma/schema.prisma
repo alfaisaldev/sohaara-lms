@@ -1,0 +1,1300 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm]
+}
+
+// ─── Organizations ───
+
+model Organization {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  logo        String?  @db.Text
+  banner      String?  @db.Text
+  description String?  @db.Text
+  website     String?  @db.VarChar(500)
+  email       String?  @db.VarChar(255)
+  phone       String?  @db.VarChar(50)
+  address     String?  @db.Text
+  city        String?  @db.VarChar(100)
+  state       String?  @db.VarChar(100)
+  country     String?  @db.VarChar(100)
+  postalCode  String?  @db.VarChar(20)
+  timezone    String   @default("UTC") @db.VarChar(50)
+  locale      String   @default("en") @db.VarChar(10)
+  status      String   @default("active") @db.VarChar(20)
+  settings    Json     @default("{}")
+  features    String[] @default([])
+  maxUsers    Int      @default(1000)
+  maxStorage  BigInt   @default(1073741824) // 1GB in bytes
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users          User[]
+  departments    Department[]
+  teams          Team[]
+  groups         Group[]
+  roles          Role[]
+  courseCategories CourseCategory[]
+  courses        Course[]
+  skillCategories SkillCategory[]
+  certificateTemplates CertificateTemplate[]
+  certificateLogos      CertificateLogo[]
+  audits         AuditLog[]
+  learningPaths  LearningPath[]
+
+  @@index([status])
+  @@index([slug])
+  @@index([deletedAt])
+  @@map("organizations")
+}
+
+model Department {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  headId         String?  @db.Uuid
+  parentId       String?  @db.Uuid
+  status         String   @default("active") @db.VarChar(20)
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  head         User?        @relation("DepartmentHead", fields: [headId], references: [id])
+  parent       Department?  @relation("DepartmentParent", fields: [parentId], references: [id])
+  children     Department[] @relation("DepartmentParent")
+  teams        Team[]
+
+  @@index([organizationId])
+  @@index([parentId])
+  @@index([headId])
+  @@index([deletedAt])
+  @@map("departments")
+}
+
+model Team {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  departmentId   String?  @db.Uuid
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  leadId         String?  @db.Uuid
+  status         String   @default("active") @db.VarChar(20)
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  lead         User?        @relation("TeamLead", fields: [leadId], references: [id])
+
+  @@index([organizationId])
+  @@index([departmentId])
+  @@index([leadId])
+  @@index([deletedAt])
+  @@map("teams")
+}
+
+model Group {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  status         String   @default("active") @db.VarChar(20)
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("groups")
+}
+
+// ─── Users & Auth ───
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique @db.VarChar(255)
+  passwordHash    String   @db.Text
+  firstName       String   @db.VarChar(100)
+  lastName        String   @db.VarChar(100)
+  avatar          String?  @db.Text
+  title           String?  @db.VarChar(255)
+  bio             String?  @db.Text
+  phone           String?  @db.VarChar(50)
+  timezone        String   @default("UTC") @db.VarChar(50)
+  locale          String   @default("en") @db.VarChar(10)
+  emailVerified   Boolean  @default(false)
+  twoFactorSecret String?  @db.Text
+  twoFactorEnabled Boolean @default(false)
+  status          String   @default("active") @db.VarChar(20)
+  organizationId  String?  @db.Uuid
+  lastLoginAt      DateTime?
+  failedLoginAttempts Int     @default(0)
+  lockedUntil      DateTime?
+  tokenVersion     Int      @default(0)
+  deletedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization     Organization?      @relation(fields: [organizationId], references: [id])
+  profile          UserProfile?
+  sessions         Session[]
+  accounts         SocialAccount[]
+  roleAssignments  UserRole[]
+  notifications    Notification[]
+  notificationPrefs NotificationPreferences?
+  departmentHead   Department[]       @relation("DepartmentHead")
+  teamLead         Team[]             @relation("TeamLead")
+  enrollments      Enrollment[]
+  lessonCompletions LessonCompletion[]
+  bookmarks        Bookmark[]
+  notes            Note[]
+  quizAttempts     QuizAttempt[]
+  assignmentSubmissions AssignmentSubmission[]
+  certificates     Certificate[]
+  certificatesReleased Certificate[] @relation("CertificateReleaser")
+  userSkills       UserSkill[]
+  discussionPosts  DiscussionPost[]
+  discussionReplies DiscussionReply[]
+  auditLogs        AuditLog[]
+  createdCourses   Course[]           @relation("CourseCreator")
+  blogPosts        BlogPost[]
+  learningPathProgress LearningPathProgress[]
+  joinRequests     LearningPathJoinRequest[]
+  reviewedJoinRequests LearningPathJoinRequest[] @relation("JoinRequestReviewer")
+  appLogs          AppLog[]
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model UserProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  headline  String?  @db.VarChar(255)
+  summary   String?  @db.Text
+  website   String?  @db.VarChar(500)
+  linkedin  String?  @db.VarChar(500)
+  twitter   String?  @db.VarChar(500)
+  github    String?  @db.VarChar(500)
+  skills    String[] @default([])
+  interests String[] @default([])
+  socialLinks Json   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Session {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  token       String   @unique @db.Text
+  refreshToken String? @db.Text
+  ipAddress   String?  @db.VarChar(45)
+  userAgent   String?  @db.Text
+  device      String?  @db.VarChar(255)
+  location    String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  lastActivity DateTime @default(now())
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model SocialAccount {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  provider   String   @db.VarChar(50)
+  providerId String   @db.VarChar(255)
+  email      String?  @db.VarChar(255)
+  avatar     String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@map("social_accounts")
+}
+
+// ─── Roles & Permissions ───
+
+model Role {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(100)
+  slug           String   @db.VarChar(100)
+  description    String?  @db.Text
+  isSystem       Boolean  @default(false)
+  permissions    String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  users        UserRole[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model UserRole {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  expiresAt  DateTime?
+  assignedBy String   @db.Uuid
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// ─── Courses ───
+
+model CourseCategory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(255)
+  slug           String   @db.VarChar(255)
+  description    String?  @db.Text
+  icon           String?  @db.VarChar(100)
+  color          String?  @db.VarChar(20)
+  parentId       String?  @db.Uuid
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization?         @relation(fields: [organizationId], references: [id])
+  parent       CourseCategory?       @relation("CategoryParent", fields: [parentId], references: [id])
+  children     CourseCategory[]      @relation("CategoryParent")
+  courses      Course[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("course_categories")
+}
+
+model Course {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  title               String    @db.VarChar(255)
+  slug                String    @db.VarChar(255)
+  subtitle            String?   @db.VarChar(500)
+  description         String?   @db.Text
+  excerpt             String?   @db.VarChar(500)
+  thumbnail           String?   @db.Text
+  cover               String?   @db.Text
+  categoryId          String?   @db.Uuid
+  tags                String[]  @default([])
+  level               String    @default("all") @db.VarChar(20)
+  language            String    @default("en") @db.VarChar(10)
+  duration            Int?      // in seconds
+  estimatedHours      Float?
+  status              String    @default("draft") @db.VarChar(20)
+  featured            Boolean   @default(false)
+  popular             Boolean   @default(false)
+  hidden              Boolean   @default(false)
+  paid                Boolean   @default(false)
+  price               Decimal?  @db.Decimal(10, 2)
+  currency            String    @default("USD") @db.VarChar(3)
+  hasCertificate      Boolean   @default(false)
+  certificateTemplateId String? @db.Uuid
+  seoTitle            String?   @db.VarChar(70)
+  seoDescription      String?   @db.VarChar(160)
+  seoKeywords         String[]  @default([])
+  createdById         String    @db.Uuid
+  publishedAt         DateTime?
+  scheduledAt         DateTime?
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     CourseCategory? @relation(fields: [categoryId], references: [id])
+  createdBy    User           @relation("CourseCreator", fields: [createdById], references: [id])
+  modules      CourseModule[]
+  enrollments  Enrollment[]
+  quizzes      Quiz[]
+  assignments  Assignment[]
+  resources    CourseResource[]
+  certificates      Certificate[]
+  scormPackages     ScormPackage[]
+  learningPathCourses LearningPathCourse[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([createdById])
+  @@index([deletedAt])
+  @@map("courses")
+}
+
+model CourseModule {
+  id          String   @id @default(uuid()) @db.Uuid
+  courseId    String   @db.Uuid
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  sortOrder   Int      @default(0)
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course   Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sections CourseSection[]
+
+  @@index([courseId])
+  @@map("course_modules")
+}
+
+model CourseSection {
+  id          String   @id @default(uuid()) @db.Uuid
+  moduleId    String   @db.Uuid
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  sortOrder   Int      @default(0)
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  module  CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([moduleId])
+  @@map("course_sections")
+}
+
+model Lesson {
+  id            String   @id @default(uuid()) @db.Uuid
+  sectionId     String   @db.Uuid
+  title         String   @db.VarChar(255)
+  slug          String   @db.VarChar(255)
+  description   String?  @db.Text
+  type          String   @db.VarChar(50)
+  content       String?  @db.Text
+  duration      Int?     // in seconds
+  sortOrder     Int      @default(0)
+  status        String   @default("draft") @db.VarChar(20)
+  isFree        Boolean  @default(false)
+  isRequired    Boolean  @default(true)
+  videoUrl      String?  @db.Text
+  videoDuration Int?
+  fileUrl       String?  @db.Text
+  fileName      String?  @db.VarChar(255)
+  fileSize      Int?
+  embedUrl      String?  @db.Text
+  externalUrl   String?  @db.Text
+  assignmentId  String?  @db.Uuid
+  quizId        String?  @db.Uuid
+  liveSessionId String?  @db.Uuid
+  scormPackageId String? @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  section       CourseSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  resources     LessonResource[]
+  completions   LessonCompletion[]
+  bookmarks     Bookmark[]
+  notes         Note[]
+  scormPackage  ScormPackage?    @relation(fields: [scormPackageId], references: [id])
+
+  @@index([sectionId])
+  @@map("lessons")
+}
+
+model ScormPackage {
+  id          String   @id @default(uuid()) @db.Uuid
+  courseId    String   @db.Uuid
+  title       String   @db.VarChar(255)
+  version     String   @default("1.2") @db.VarChar(10)
+  identifier  String?  @db.VarChar(255)
+  entryUrl    String   @db.Text
+  packagePath String   @db.Text
+  manifest    Json?
+  fileSize    Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId])
+  @@map("scorm_packages")
+}
+
+model LessonResource {
+  id        String   @id @default(uuid()) @db.Uuid
+  lessonId  String   @db.Uuid
+  title     String   @db.VarChar(255)
+  type      String   @db.VarChar(50)
+  url       String   @db.Text
+  fileSize  Int?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+  @@map("lesson_resources")
+}
+
+// ─── Course Resources ───
+
+model CourseResource {
+  id          String   @id @default(uuid()) @db.Uuid
+  courseId    String   @db.Uuid
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  type        String   @db.VarChar(50)
+  url         String   @db.Text
+  fileSize    Int?
+  tags        String[] @default([])
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@map("course_resources")
+}
+
+// ─── Enrollments & Progress ───
+
+model Enrollment {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  courseId      String    @db.Uuid
+  status        String    @default("active") @db.VarChar(20)
+  progress      Float     @default(0)
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  expiresAt     DateTime?
+  certificateId String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course            Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonCompletions LessonCompletion[]
+  quizAttempts      QuizAttempt[]
+  assignmentSubmissions AssignmentSubmission[]
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@map("enrollments")
+}
+
+model LessonCompletion {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  lessonId    String    @db.Uuid
+  enrollmentId String   @db.Uuid
+  completed   Boolean   @default(false)
+  timeSpent   Int?      // in seconds
+  watchProgress Float?  // 0-100
+  score       Float?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson     Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId, enrollmentId])
+  @@index([userId])
+  @@index([lessonId])
+  @@index([enrollmentId])
+  @@map("lesson_completions")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  lessonId  String   @db.Uuid
+  timestamp Int?     // video timestamp in seconds
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([lessonId])
+  @@map("bookmarks")
+}
+
+model Note {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  lessonId  String   @db.Uuid
+  content   String   @db.Text
+  timestamp Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([lessonId])
+  @@map("notes")
+}
+
+// ─── Quizzes ───
+
+model Quiz {
+  id                String   @id @default(uuid()) @db.Uuid
+  courseId          String   @db.Uuid
+  title             String   @db.VarChar(255)
+  description       String?  @db.Text
+  instructions      String?  @db.Text
+  timeLimit         Int?
+  passingScore      Int      @default(70)
+  maxAttempts       Int      @default(3)
+  shuffleQuestions  Boolean  @default(false)
+  shuffleAnswers    Boolean  @default(false)
+  showResults       Boolean  @default(true)
+  showCorrectAnswers Boolean @default(true)
+  status            String   @default("draft") @db.VarChar(20)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  course    Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions Question[]
+  attempts  QuizAttempt[]
+
+  @@index([courseId])
+  @@map("quizzes")
+}
+
+model Question {
+  id            String   @id @default(uuid()) @db.Uuid
+  quizId        String   @db.Uuid
+  type          String   @db.VarChar(50)
+  title         String   @db.Text
+  description   String?  @db.Text
+  points        Int      @default(1)
+  sortOrder     Int      @default(0)
+  correctAnswer String?  @db.Text
+  correctAnswers String[] @default([])
+  explanation   String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  quiz          Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options       QuestionOption[]
+  matchingPairs MatchingPair[]
+  answers       QuizAnswer[]
+
+  @@index([quizId])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @db.Uuid
+  text       String   @db.Text
+  isCorrect  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("question_options")
+}
+
+model MatchingPair {
+  id         String @id @default(uuid()) @db.Uuid
+  questionId String @db.Uuid
+  left       String @db.Text
+  right      String @db.Text
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("matching_pairs")
+}
+
+model QuizAttempt {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  quizId       String    @db.Uuid
+  enrollmentId String    @db.Uuid
+  score        Float     @default(0)
+  maxScore     Float     @default(0)
+  percentage   Float     @default(0)
+  passed       Boolean   @default(false)
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  timeSpent    Int?
+  attemptNumber Int      @default(1)
+  createdAt    DateTime  @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz       Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  enrollment Enrollment  @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  answers    QuizAnswer[]
+
+  @@index([userId])
+  @@index([quizId])
+  @@index([enrollmentId])
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id          String  @id @default(uuid()) @db.Uuid
+  attemptId   String  @db.Uuid
+  questionId  String  @db.Uuid
+  answer      String? @db.Text
+  answers     String[] @default([])
+  matchingAnswer Json? @default("{}")
+  isCorrect   Boolean @default(false)
+  points      Float   @default(0)
+  maxPoints   Float   @default(0)
+  feedback    String? @db.Text
+
+  attempt  QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])
+
+  @@index([attemptId])
+  @@index([questionId])
+  @@unique([attemptId, questionId])
+  @@map("quiz_answers")
+}
+
+model QuestionBank {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  tags           String[] @default([])
+  questions      Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("question_banks")
+}
+
+// ─── Assignments ───
+
+model Assignment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  courseId           String   @db.Uuid
+  title              String   @db.VarChar(255)
+  description        String?  @db.Text
+  instructions       String?  @db.Text
+  dueDate            DateTime?
+  maxScore           Int      @default(100)
+  passingScore       Int      @default(60)
+  allowLateSubmission Boolean @default(false)
+  maxAttempts        Int      @default(1)
+  submissionType     String   @default("any") @db.VarChar(20)
+  rubric             Json     @default("[]")
+  status             String   @default("draft") @db.VarChar(20)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  course      Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions AssignmentSubmission[]
+
+  @@index([courseId])
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id           String    @id @default(uuid()) @db.Uuid
+  assignmentId String    @db.Uuid
+  userId       String    @db.Uuid
+  enrollmentId String    @db.Uuid
+  content      String?   @db.Text
+  files        Json      @default("[]")
+  links        String[]  @default([])
+  attemptNumber Int      @default(1)
+  status       String    @default("submitted") @db.VarChar(20)
+  score        Float?
+  feedback     String?   @db.Text
+  gradedBy     String?   @db.Uuid
+  gradedAt     DateTime?
+  submittedAt  DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId])
+  @@index([userId])
+  @@index([enrollmentId])
+  @@map("assignment_submissions")
+}
+
+// ─── Learning Paths ───
+
+model LearningPath {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  title           String    @db.VarChar(255)
+  slug            String    @db.VarChar(255)
+  description     String?   @db.Text
+  thumbnail       String?   @db.Text
+  status          String    @default("draft") @db.VarChar(20)
+  courses         String[]  @default([])
+  prerequisites   String[]  @default([])
+  estimatedHours  Float?
+  targetAudience  String?   @db.Text
+  isMandatory     Boolean   @default(false)
+  deadline        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization    Organization            @relation(fields: [organizationId], references: [id])
+  coursesRelation LearningPathCourse[]     @relation("LearningPathCourseRelation")
+  assignments     LearningPathAssignment[]
+  progress        LearningPathProgress[]
+  joinRequests    LearningPathJoinRequest[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("learning_paths")
+}
+
+model LearningPathCourse {
+  id              String   @id @default(uuid()) @db.Uuid
+  learningPathId  String   @db.Uuid
+  courseId        String   @db.Uuid
+  sortOrder       Int      @default(0)
+  isMandatory     Boolean  @default(true)
+  prerequisites   String[] @default([])
+  createdAt       DateTime @default(now())
+
+  learningPath LearningPath @relation("LearningPathCourseRelation", fields: [learningPathId], references: [id], onDelete: Cascade)
+  course       Course       @relation(fields: [courseId], references: [id])
+
+  @@unique([learningPathId, courseId])
+  @@index([learningPathId])
+  @@map("learning_path_courses")
+}
+
+model LearningPathAssignment {
+  id              String   @id @default(uuid()) @db.Uuid
+  learningPathId  String   @db.Uuid
+  assigneeType    String   @db.VarChar(20)
+  assigneeId      String   @db.Uuid
+  createdAt       DateTime @default(now())
+
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+
+  @@index([learningPathId])
+  @@index([assigneeType, assigneeId])
+  @@map("learning_path_assignments")
+}
+
+model LearningPathProgress {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  learningPathId   String    @db.Uuid
+  progress         Float     @default(0)
+  completedCourses String[]  @default([])
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, learningPathId])
+  @@index([userId])
+  @@index([learningPathId])
+  @@map("learning_path_progress")
+}
+
+model LearningPathJoinRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  learningPathId  String    @db.Uuid
+  userId          String    @db.Uuid
+  status          String    @default("pending") @db.VarChar(20)
+  message         String?   @db.Text
+  reviewedBy      String?   @db.Uuid
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+  reviewer     User?        @relation("JoinRequestReviewer", fields: [reviewedBy], references: [id])
+
+  @@unique([learningPathId, userId])
+  @@index([status])
+  @@index([learningPathId])
+  @@index([userId])
+  @@map("learning_path_join_requests")
+}
+
+// ─── Certificates ───
+
+model Certificate {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @db.Uuid
+  courseId          String   @db.Uuid
+  templateId        String?  @db.Uuid
+  certificateNumber String   @unique @db.VarChar(100)
+  verificationUrl   String   @db.Text
+  title             String   @db.VarChar(255)
+  description       String?  @db.Text
+  issuedAt          DateTime @default(now())
+  releasedAt        DateTime?
+  revokedAt         DateTime?
+  releasedById      String?  @db.Uuid
+  expiresAt         DateTime?
+  status            String   @default("pending") @db.VarChar(20)
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now())
+
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course     Course @relation(fields: [courseId], references: [id])
+  template   CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  releasedBy User?  @relation("CertificateReleaser", fields: [releasedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([certificateNumber])
+  @@index([status])
+  @@map("certificates")
+}
+
+model CertificateTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  content        String   @db.Text
+  variables      String[] @default([])
+  orientation    String   @default("landscape") @db.VarChar(20)
+  width          Int      @default(1200)
+  height         Int      @default(800)
+  backgroundImageUrl String? @db.Text
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  certificates Certificate[]
+
+  @@index([organizationId])
+  @@map("certificate_templates")
+}
+
+// Logos uploaded for use in certificate templates (reusable across templates)
+model CertificateLogo {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(255)
+  url            String   @db.Text
+  width          Int      @default(200)
+  height         Int      @default(80)
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("certificate_logos")
+}
+
+// ─── Skills ───
+
+model SkillCategory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(255)
+  slug           String   @db.VarChar(255)
+  description    String?  @db.Text
+  icon           String?  @db.VarChar(100)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  skills       Skill[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("skill_categories")
+}
+
+model Skill {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  slug        String   @db.VarChar(255)
+  description String?  @db.Text
+  categoryId  String   @db.Uuid
+  level       String   @default("beginner") @db.VarChar(20)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  SkillCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userSkills UserSkill[]
+
+  @@unique([slug])
+  @@index([categoryId])
+  @@map("skills")
+}
+
+model UserSkill {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  skillId    String   @db.Uuid
+  score      Float    @default(0)
+  maxScore   Float    @default(100)
+  level      String   @default("beginner") @db.VarChar(20)
+  assessed   Boolean  @default(false)
+  assessedBy String?  @db.Uuid
+  assessedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@index([skillId])
+  @@map("user_skills")
+}
+
+// ─── Community ───
+
+model DiscussionPost {
+  id          String   @id @default(uuid()) @db.Uuid
+  courseId    String?  @db.Uuid
+  organizationId String? @db.Uuid
+  authorId    String   @db.Uuid
+  title       String   @db.VarChar(255)
+  content     String   @db.Text
+  pinned      Boolean  @default(false)
+  locked      Boolean  @default(false)
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  author  User             @relation(fields: [authorId], references: [id])
+  replies DiscussionReply[]
+
+  @@index([courseId])
+  @@index([organizationId])
+  @@index([authorId])
+  @@map("discussion_posts")
+}
+
+model DiscussionReply {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  authorId  String   @db.Uuid
+  parentId  String?  @db.Uuid
+  content   String   @db.Text
+  mentions  String[] @default([])
+  reactions Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post     DiscussionPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author   User             @relation(fields: [authorId], references: [id])
+  parent   DiscussionReply? @relation("ReplyParent", fields: [parentId], references: [id])
+  children DiscussionReply[] @relation("ReplyParent")
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("discussion_replies")
+}
+
+// ─── Notifications ───
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  data      Json     @default("{}")
+  read      Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationPreferences {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @unique @db.Uuid
+  email       Boolean @default(true)
+  inApp       Boolean @default(true)
+  digest      Boolean @default(false)
+  preferences Json    @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  type      String   @unique @db.VarChar(50)
+  subject   String   @db.VarChar(500)
+  body      String   @db.Text
+  variables String[] @default([])
+  channels  String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+// ─── Audit Log ───
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  userId         String?  @db.Uuid
+  action         String   @db.VarChar(100)
+  entity         String   @db.VarChar(100)
+  entityId       String?  @db.VarChar(100)
+  changes        Json     @default("{}")
+  metadata       Json     @default("{}")
+  ipAddress      String?  @db.VarChar(45)
+  userAgent      String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  user         User?         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── App Log (server-side telemetry) ───
+
+model AppLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  level       String   @db.VarChar(20)     // info, warn, error, debug, verbose, fatal
+  context     String?  @db.VarChar(100)    // controller/service/module name
+
+  // HTTP request
+  method      String?  @db.VarChar(10)
+  path        String?  @db.VarChar(1000)
+  queryString String?  @db.Text             // raw query string
+  statusCode  Int?
+
+  // Timing
+  duration    Int?                           // response time in ms
+
+  // Error
+  errorCode   String?  @db.VarChar(50)      // 400, 404, 500, P2002, EACCES, etc.
+  errorName   String?  @db.VarChar(100)     // NotFoundException, SyntaxError, etc.
+  message     String   @db.Text
+  stack       String?  @db.Text             // full stack trace
+
+  // Request/response payloads for debugging
+  requestHeaders  Json     @default("{}")
+  requestBody     Json     @default("{}")
+  responseBody    Json     @default("{}")    // truncated to 10KB
+  responseHeaders Json     @default("{}")
+
+  // Metadata (anything else: query params, db query info, env flags)
+  metadata    Json     @default("{}")
+
+  // Origin
+  userId      String?  @db.Uuid
+  ipAddress   String?  @db.VarChar(45)
+  userAgent   String?  @db.Text
+
+  // Environment context
+  nodeVersion String?  @db.VarChar(20)
+  environment String?  @db.VarChar(20)      // development, production, test
+  hostname    String?  @db.VarChar(255)
+
+  timestamp   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([level])
+  @@index([context])
+  @@index([method])
+  @@index([path])
+  @@index([statusCode])
+  @@index([errorCode])
+  @@index([timestamp])
+  @@index([userId])
+  @@index([duration])
+  @@map("app_logs")
+}
+
+// ─── Media ───
+
+model Media {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  userId         String   @db.Uuid
+  name           String   @db.VarChar(255)
+  fileName       String   @db.VarChar(255)
+  mimeType       String   @db.VarChar(100)
+  size           Int
+  url            String   @db.Text
+  thumbnailUrl   String?  @db.Text
+  folderId       String?  @db.Uuid
+  tags           String[] @default([])
+  alt            String?  @db.VarChar(500)
+  width          Int?
+  height         Int?
+  duration       Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  folder MediaFolder? @relation(fields: [folderId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([folderId])
+  @@index([mimeType])
+  @@map("media")
+}
+
+model MediaFolder {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(255)
+  parentId       String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  parent   MediaFolder? @relation("FolderParent", fields: [parentId], references: [id])
+  children MediaFolder[] @relation("FolderParent")
+  media    Media[]
+
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("media_folders")
+}
+
+// ─── Blog ───
+
+model BlogPost {
+  id          String    @id @default(uuid()) @db.Uuid
+  organizationId String? @db.Uuid
+  authorId    String    @db.Uuid
+  title       String    @db.VarChar(255)
+  slug        String    @unique @db.VarChar(255)
+  excerpt     String?   @db.VarChar(500)
+  content     String    @db.Text
+  coverImage  String?   @db.Text
+  categoryId  String?   @db.Uuid
+  tags        String[]  @default([])
+  status      String    @default("draft") @db.VarChar(20)
+  publishedAt DateTime?
+  seoTitle    String?   @db.VarChar(70)
+  seoDescription String? @db.VarChar(160)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category BlogCategory? @relation(fields: [categoryId], references: [id])
+  author   User         @relation(fields: [authorId], references: [id])
+
+  @@index([organizationId])
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([slug])
+  @@map("blog_posts")
+}
+
+model BlogCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts BlogPost[]
+
+  @@map("blog_categories")
+}
+
+// ─── System ───
+
+model SystemSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique @db.VarChar(255)
+  value     Json
+  type      String   @default("string") @db.VarChar(50)
+  group     String   @default("general") @db.VarChar(100)
+  description String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(255)
+  key         String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  enabled     Boolean  @default(false)
+  rules       Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("feature_flags")
+}

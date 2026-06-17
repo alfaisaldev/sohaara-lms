@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "incremental": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "ignoreDeprecations": "5.0",
+    "baseUrl": ".",
+    "paths": {
+      "@sohaara/ui/*": ["packages/ui/src/*"],
+      "@sohaara/database": ["packages/database/src"],
+      "@sohaara/database/*": ["packages/database/src/*"],
+      "@sohaara/auth": ["packages/auth/src"],
+      "@sohaara/auth/*": ["packages/auth/src/*"],
+      "@sohaara/shared": ["packages/shared/src"],
+      "@sohaara/shared/*": ["packages/shared/src/*"],
+      "@sohaara/types": ["packages/types/src"],
+      "@sohaara/types/*": ["packages/types/src/*"],
+      "@sohaara/notifications": ["packages/notifications/src"],
+      "@sohaara/storage": ["packages/storage/src"],
+      "@sohaara/search": ["packages/search/src"],
+      "@sohaara/analytics": ["packages/analytics/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next", "build", "coverage"]
+}
