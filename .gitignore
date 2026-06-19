@@ -32,6 +32,12 @@ opencode.json
 .claude/
 AGENTS.md
 CREDENTIALS.txt
+CONTEXT.md
+
+# Local-only notes — see NOTES.md for the convention. Not for the repo.
+NOTES.md
+PLAN.md
+AWS intrigation.md
 
 # Root-level user uploads — preserve directory structure with .gitkeep, ignore contents
 uploads/**
