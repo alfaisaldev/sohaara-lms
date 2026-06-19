@@ -38,37 +38,47 @@ A self-hosted, production-grade LMS built for organizations that need full contr
 
 ---
 
-## Quick Start (Docker)
+## Quick Start (Docker, against the local AWS emulator)
 
-The fastest way to run the full stack locally. **One command** brings up the database, applies migrations, seeds the super admin, creates the MinIO bucket, and starts every app.
+The fastest path uses the **AWS emulator** stack at
+[`../aws-emulator/`](../aws-emulator/) for Postgres / Redis / MinIO /
+Meilisearch / Keycloak / Mailhog. This compose only ships the three LMS
+apps (api / web / admin) and connects to the emulator over a shared
+Docker network — so all data, queues, secrets, and buckets live in one
+place.
 
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose on Linux)
 - Node.js 20+ and pnpm 9+ — **only required for the local-dev (no-Docker) workflow** below
 
-### 1. Clone
+### 1. Start the emulator (Postgres, Redis, MinIO, Meili, Keycloak, Mailhog)
 
 ```bash
-git clone https://github.com/alfaisaldev/sohaara-lms.git
-cd sohaara-lms
+cd ../aws-emulator
+docker compose up -d
 ```
 
-### 2. Start the stack
+Wait until `docker compose ps` shows all 8 services as `Up`/`healthy`.
+This creates the `emu-net` Docker network that this compose joins.
+
+### 2. Start the LMS apps
 
 ```bash
+cd ../sohaara-lms
 docker compose up -d --build
 ```
 
-That's it. On first run this:
+On first run this:
 
-1. Pulls / builds all images
-2. Starts PostgreSQL, Redis, Meilisearch, MinIO (with healthchecks)
-3. Runs `sohaara-minio-init` to create the S3 bucket the API expects
-4. The `sohaara-api` entrypoint runs `prisma migrate deploy` + seeds the database, then starts the Nest server
-5. Starts the API, Web App, and Admin Panel (each with its own healthcheck)
+1. Builds the `sohaara-lms-api`, `sohaara-lms-web`, `sohaara-lms-admin` images
+2. Joins the api/web/admin containers to the `emu-net` network
+3. The `sohaara-api` entrypoint waits for `emu-postgres:5432`, runs
+   `prisma migrate deploy`, seeds the database, then starts the Nest server
+4. Web + Admin start in parallel and healthcheck against `http://api:4000/api/v1/health`
 
-Watch the api's bootstrap step with `docker compose logs -f api`. The whole process takes 2–5 minutes on a clean machine.
+Watch the api's bootstrap with `docker compose logs -f api`. The whole
+process takes 2–5 minutes on a clean machine.
 
 ### 3. Open the apps
 
@@ -78,8 +88,10 @@ Watch the api's bootstrap step with `docker compose logs -f api`. The whole proc
 | Admin Panel | http://localhost:3001 |
 | API | http://localhost:4000 |
 | API docs (Swagger) | http://localhost:4000/api/docs |
-| MinIO Console | http://localhost:9001 |
-| Meilisearch | http://localhost:7700 |
+| Emulator MinIO Console | http://localhost:9001 |
+| Emulator Keycloak admin | http://localhost:8080 |
+| Emulator Meilisearch | http://localhost:7700 |
+| Emulator Mailhog | http://localhost:8025 |
 
 ### 4. Sign in
 
@@ -92,26 +104,48 @@ Password: Admin123!
 
 ### Container map
 
-| Service | Purpose | Restart policy |
-|---|---|---|
-| `sohaara-postgres` | PostgreSQL 16 | unless-stopped |
-| `sohaara-redis` | Redis 7 | unless-stopped |
-| `sohaara-meilisearch` | Meilisearch v1.12 | unless-stopped |
-| `sohaara-minio` | S3-compatible object store | unless-stopped |
-| `sohaara-minio-init` | One-shot: creates the bucket | runs once, exits |
-| `sohaara-api` | NestJS API (entrypoint runs migrations + seed, then `exec`s the server) | unless-stopped |
-| `sohaara-web` | Next.js learner app (standalone) | unless-stopped |
-| `sohaara-admin` | Next.js admin panel (standalone) | unless-stopped |
+This compose only ships the **three LMS apps**. All data services come
+from the emulator (`../aws-emulator/`).
+
+| Container | Purpose | Network | Restart policy |
+|---|---|---|---|
+| `sohaara-api` | NestJS API (entrypoint runs migrations + seed, then `exec`s the server) | `emu-net` | unless-stopped |
+| `sohaara-web` | Next.js learner app (standalone) | `emu-net` | unless-stopped |
+| `sohaara-admin` | Next.js admin panel (standalone) | `emu-net` | unless-stopped |
+
+The api talks to `emu-postgres`, `emu-redis`, `emu-meilisearch`,
+`emu-minio`, `emu-keycloak`, and `emu-mailhog` by container name. Web
+and admin reach the api at `http://api:4000`. No host port-forwarding
+needed for inter-service traffic.
 
 ### Reset everything
 
-To start from a totally clean slate (drops the DB, clears caches, wipes MinIO, etc.):
+To start from a totally clean slate (drops the DB, clears caches, wipes
+MinIO, etc.):
 
 ```bash
+# Stop LMS apps
 docker compose down -v
-rm -rf .docker/postgres .docker/redis .docker/meilisearch .docker/minio
+
+# Wipe emulator state too
+cd ../aws-emulator
+docker compose down -v
+rm -rf ./data
+docker compose up -d
+
+# Re-baseline migrations if you intend to keep the same DB, or wipe:
+cd ../sohaara-lms
 docker compose up -d --build
 ```
+
+---
+
+## Quick Start (standalone Docker — bring your own data services)
+
+If you'd rather not use the emulator and want a single self-contained
+compose with its own Postgres / Redis / MinIO / Meili, see the previous
+git revision or pin to tag `v1.0.0-standalone`. This compose file now
+defaults to the emulator path.
 
 ---
 
@@ -122,7 +156,11 @@ docker compose up -d --build
 If you prefer to run Node locally and only Docker the databases:
 
 ```bash
-docker compose up -d postgres redis meilisearch minio
+# In one terminal: emulator (or any Postgres/Redis/MinIO/Meili)
+cd ../aws-emulator && docker compose up -d
+
+# In another terminal: LMS apps
+cd ../sohaara-lms
 pnpm install
 pnpm db:generate
 pnpm db:push
@@ -130,7 +168,16 @@ pnpm db:seed
 pnpm dev          # runs API + Web + Admin concurrently
 ```
 
-The orchestrator in [`start.js`](start.js) spawns all three apps in parallel with prefixed, color-coded logs and auto-restart on crash.
+The orchestrator in [`start.js`](start.js) spawns all three apps in
+parallel with prefixed, color-coded logs and auto-restart on crash.
+
+`apps/api/.env` is the source of truth for host-side env. To pull the
+emulator's credentials into it, run the sync script in the emulator
+folder:
+
+```bash
+cd ../aws-emulator && ./scripts/sync-lms-env.ps1
+```
 
 ### Useful scripts
 

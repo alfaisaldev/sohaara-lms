@@ -1,113 +1,18 @@
+# Runs the Sohaara LMS against the local AWS emulator at
+# E:\AI\Testing\aws-emulator\. All three apps join `emu-net` (an external
+# network created by the emulator's own compose) and reach Postgres / Redis /
+# MinIO / Meilisearch / Mailhog / Keycloak by container name. No data is
+# stored in this compose — emulator owns all state.
+#
+# Network `emu-net` must exist (it does if `docker compose ps` in the emulator
+# folder shows its services as Up). To create it manually if you ever wipe it:
+#   docker network create emu-net
+#
+# Start order:
+#   1. (in aws-emulator/) docker compose up -d
+#   2. (here)              docker compose up -d --build
+
 services:
-  # ─── PostgreSQL ───
-  postgres:
-    image: postgres:16-alpine
-    container_name: sohaara-postgres
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: sohaara_lms
-      POSTGRES_USER: sohaara
-      POSTGRES_PASSWORD: sohaara
-    volumes:
-      - .docker/postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sohaara -d sohaara_lms"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── Redis ───
-  redis:
-    image: redis:7-alpine
-    container_name: sohaara-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - .docker/redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── Meilisearch ───
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    container_name: sohaara-meilisearch
-    restart: unless-stopped
-    ports:
-      - "7700:7700"
-    environment:
-      MEILI_MASTER_KEY: sohaara-master-key
-      MEILI_NO_ANALYTICS: "true"
-      MEILI_ENV: development
-    volumes:
-      - .docker/meilisearch:/meili_data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── MinIO ───
-  minio:
-    image: minio/minio:latest
-    container_name: sohaara-minio
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: sohaara
-      MINIO_ROOT_PASSWORD: sohaara-secret-key
-    command: server /data --console-address ":9001"
-    volumes:
-      - .docker/minio:/data
-    healthcheck:
-      # `mc ready local` returns 0 once the server is accepting requests.
-      # mc is shipped in the minio image.
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── MinIO init (one-shot) ───
-  # MinIO does not auto-create buckets on write, so the first upload would
-  # 404. This service waits for MinIO to be healthy, runs `mc mb --ignore-existing`
-  # against the bucket the API expects, then exits. Idempotent on re-runs.
-  #
-  # The init logic lives in .docker/minio-init.sh. We bind-mount it into the
-  # minio/mc image (which already ships `mc`) and exec it directly — compose's
-  # own `command:` parser splits multi-statement shell strings on `&&`, so an
-  # inlined `mc alias set ... && mc mb ... && echo ...` would get truncated.
-  minio-init:
-    image: minio/mc:latest
-    container_name: sohaara-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    networks:
-      - default
-    environment:
-      MINIO_ROOT_USER: sohaara
-      MINIO_ROOT_PASSWORD: sohaara-secret-key
-      MINIO_ENDPOINT: minio:9000
-      MINIO_BUCKET: sohaara-lms
-      MINIO_USE_SSL: "false"
-    volumes:
-      - ./.docker/minio-init.sh:/minio-init.sh:ro
-    # The minio/mc image ships with `mc` as its entrypoint, so without an
-    # explicit override our `command:` would become args to `mc` (e.g.
-    # `mc /bin/sh /minio-init.sh`, which fails with "command not recognized").
-    # Setting `entrypoint: []` clears it, then the explicit list-form command
-    # becomes the actual argv.
-    entrypoint: []
-    command: ["/bin/sh", "/minio-init.sh"]
-    restart: "no"
-
   # ─── API ───
   # The api image's entrypoint runs `prisma migrate deploy` + `tsx src/seed.ts`
   # before exec'ing the nest server. Both are idempotent — on restarts after
@@ -123,32 +28,47 @@ services:
       - "4000:4000"
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://sohaara:sohaara@postgres:5432/sohaara_lms?schema=public
-      REDIS_URL: redis://redis:6379
-      MEILISEARCH_URL: http://meilisearch:7700
-      MEILISEARCH_KEY: sohaara-master-key
-      MINIO_ENDPOINT: minio
+      # Emulator Postgres — container name `emu-postgres` on the emu-net network.
+      DATABASE_URL: postgresql://sohaara:sohaara_dev_password@emu-postgres:5432/sohaara_lms?schema=public
+      POSTGRES_HOST: emu-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: sohaara
+      POSTGRES_PASSWORD: sohaara_dev_password
+      POSTGRES_DB: sohaara_lms
+      # Emulator Redis (no password).
+      REDIS_URL: redis://emu-redis:6379
+      # Emulator Meilisearch (master key from emulator .env).
+      MEILISEARCH_URL: http://emu-meilisearch:7700
+      MEILISEARCH_KEY: sohaara_dev_master_key
+      # Emulator MinIO (S3).
+      MINIO_ENDPOINT: emu-minio
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: sohaara
-      MINIO_SECRET_KEY: sohaara-secret-key
+      MINIO_SECRET_KEY: sohaara_dev_password
       MINIO_BUCKET: sohaara-lms
       MINIO_USE_SSL: "false"
+      STORAGE_PROVIDER: minio
+      # Emulator Keycloak (OIDC). Kept for future use — current LMS runtime
+      # still uses local JWT, but the env is wired so flipping AUTH_PROVIDER
+      # later is a one-line change.
+      KEYCLOAK_URL: http://emu-keycloak:8080
+      KEYCLOAK_REALM: sohaara
+      KEYCLOAK_CLIENT_ID: sohaara-api
+      AUTH_PROVIDER: local
+      # Emulator Mailhog (SMTP receive-only).
+      SMTP_HOST: emu-mailhog
+      SMTP_PORT: 1025
+      # JWT.
       JWT_SECRET: dev-jwt-secret-do-not-use-in-production
       JWT_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 7d
       JWT_ISSUER: sohaara-lms
+      # Public URLs the LMS exposes to clients.
       APP_URL: http://localhost:3000
       ADMIN_URL: http://localhost:3001
       API_URL: http://localhost:4000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      meilisearch:
-        condition: service_healthy
+    networks:
+      - emu-net
     # Hot-reload source only — DO NOT bind-mount the whole /app. The host's
     # node_modules is owned by a different UID and would shadow the image's
     # chown'd node_modules, breaking prisma generate and any other
@@ -176,11 +96,15 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:4000
+      # Reach the api by its docker network name, not localhost — both
+      # containers live on emu-net so the api container's hostname is `api`.
+      NEXT_PUBLIC_API_URL: http://api:4000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - emu-net
     # No source bind-mounts: the image ships a `output: 'standalone'` Next.js
     # server with everything bundled. Mounting the host source would shadow
     # that bundle and the page would never hydrate past its loading shell.
@@ -202,24 +126,30 @@ services:
       - "3001:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_API_URL: http://api:4000
       NEXT_PUBLIC_APP_URL: http://localhost:3001
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - emu-net
     # No source bind-mounts: see note under the `web` service above.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/admin/login >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 20s
 
 volumes:
-  postgres_data:
-  redis_data:
-  meilisearch_data:
-  minio_data:
   # Named volume so docker preserves the image's chown'd node_modules
   # across `docker compose up` (anonymous volumes were not being preserved).
   api_node_modules:
+
+networks:
+  # The emulator compose renames its default network to `emu-net` so external
+  # compose files can attach to it. The emulator must already be running
+  # before this compose is brought up.
+  emu-net:
+    external: true
+    name: emu-net

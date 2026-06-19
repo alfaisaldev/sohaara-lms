@@ -14,7 +14,7 @@ echo "[entrypoint] waiting for postgres"
 i=0
 while [ "$i" -lt 60 ]; do
   i=$((i + 1))
-  if pg_isready -h postgres -p 5432 -U sohaara -d sohaara_lms -q; then
+  if pg_isready -h "${POSTGRES_HOST:-postgres}" -p "${POSTGRES_PORT:-5432}" -U "${POSTGRES_USER:-sohaara}" -d "${POSTGRES_DB:-sohaara_lms}" -q; then
     echo "  ready after ${i} attempt(s)"
     break
   fi
@@ -28,11 +28,11 @@ done
 cd /app/packages/database
 
 echo "[entrypoint] prisma migrate deploy"
-DATABASE_URL="${DATABASE_URL:-postgresql://sohaara:sohaara@postgres:5432/sohaara_lms?schema=public}" \
+DATABASE_URL="${DATABASE_URL:-postgresql://sohaara:sohaara_dev_password@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-sohaara_lms}?schema=public}" \
   /app/node_modules/.bin/prisma migrate deploy
 
 echo "[entrypoint] seed"
-DATABASE_URL="${DATABASE_URL:-postgresql://sohaara:sohaara@postgres:5432/sohaara_lms?schema=public}" \
+DATABASE_URL="${DATABASE_URL:-postgresql://sohaara:sohaara_dev_password@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-sohaara_lms}?schema=public}" \
   /app/node_modules/.bin/tsx src/seed.ts
 
 echo "[entrypoint] starting api"
