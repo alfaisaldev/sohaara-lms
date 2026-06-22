@@ -24,7 +24,7 @@ export class CertificateController {
 
   @Get('certificates/all')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Admin: list all certificates (filter by status)' })
   async findAllAdmin(@Query('status') status?: string, @Query('search') search?: string) {
     return this.cert.findAllAdmin({ status, search });
@@ -44,7 +44,7 @@ export class CertificateController {
 
   @Post('certificates/issue')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Issue a certificate (admin manual issue)' })
   async issue(@Body() body: any) {
     return this.cert.issue(body);
@@ -52,7 +52,7 @@ export class CertificateController {
 
   @Post('certificates/:id/release')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Admin: release/approve a pending certificate' })
   async release(@Param('id') id: string, @Req() req: any) {
     return this.cert.release(id, req.user.id);
@@ -60,7 +60,7 @@ export class CertificateController {
 
   @Post('certificates/:id/revoke')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Revoke a certificate' })
   async revoke(@Param('id') id: string) {
     return this.cert.revoke(id);
@@ -76,7 +76,7 @@ export class CertificateController {
 
   @Post('certificate-templates')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create certificate template' })
   async createTemplate(@Body() body: any, @Req() req: any) {
     return this.cert.createTemplate({
@@ -89,7 +89,7 @@ export class CertificateController {
 
   @Post('certificate-templates/:id/image')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload background image for a template' })
@@ -103,7 +103,7 @@ export class CertificateController {
 
   @Delete('certificate-templates/:id/image')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Remove background image from a template' })
   async removeImage(@Param('id') id: string) {
     return this.cert.removeTemplateImage(id);
@@ -117,7 +117,7 @@ export class CertificateController {
 
   @Put('certificate-templates/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update certificate template' })
   async updateTemplate(@Param('id') id: string, @Body() body: any) {
     return this.cert.updateTemplate(id, body);
@@ -125,7 +125,7 @@ export class CertificateController {
 
   @Delete('certificate-templates/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete template' })
   async deleteTemplate(@Param('id') id: string) {
     return this.cert.deleteTemplate(id);
@@ -141,7 +141,7 @@ export class CertificateController {
 
   @Post('certificate-logos')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload a reusable certificate logo' })
@@ -159,7 +159,7 @@ export class CertificateController {
 
   @Delete('certificate-logos/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete a certificate logo' })
   async deleteLogo(@Param('id') id: string) {
     return this.cert.deleteLogo(id);

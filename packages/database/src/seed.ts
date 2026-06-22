@@ -19,6 +19,52 @@ async function main() {
     },
   });
 
+  // Migration: rename the legacy `platform_super_admin` slug to
+  // `super_admin` so the DB and the Keycloak realm agree on the
+  // canonical role slug. The Keycloak realm already uses
+  // `super_admin` (sohaara.json `roles.realm`); the local DB still
+  // uses `platform_super_admin` from the original schema. Updating
+  // `Role.slug` cascades through `user_roles` automatically because
+  // they reference `Role.id`, not `slug`. We rename in-place rather
+  // than delete-and-recreate so any existing role assignments
+  // survive.
+  const legacySuperAdmin = await prisma.role.findFirst({
+    where: { slug: 'platform_super_admin', organizationId: null },
+  });
+  if (legacySuperAdmin) {
+    const conflict = await prisma.role.findFirst({
+      where: { slug: 'super_admin', organizationId: null },
+    });
+    if (conflict) {
+      // Both rows exist — merge legacy into the conflict row by
+      // moving its user_roles over, then delete the legacy row.
+      const legacyUserRoles = await prisma.userRole.findMany({
+        where: { roleId: legacySuperAdmin.id },
+      });
+      for (const ur of legacyUserRoles) {
+        const existing = await prisma.userRole.findFirst({
+          where: { userId: ur.userId, roleId: conflict.id },
+        });
+        if (!existing) {
+          await prisma.userRole.update({
+            where: { id: ur.id },
+            data: { roleId: conflict.id },
+          });
+        } else {
+          await prisma.userRole.delete({ where: { id: ur.id } });
+        }
+      }
+      await prisma.role.delete({ where: { id: legacySuperAdmin.id } });
+      console.log('  ✗ Role merged: Platform Super Admin → Super Admin');
+    } else {
+      await prisma.role.update({
+        where: { id: legacySuperAdmin.id },
+        data: { slug: 'super_admin', name: 'Super Admin' },
+      });
+      console.log('  ✓ Role renamed: platform_super_admin → super_admin');
+    }
+  }
+
   const slugsToRemove = ['organization_admin', 'manager', 'instructor', 'teaching_assistant'];
   for (const slug of slugsToRemove) {
     const r = await prisma.role.findFirst({ where: { slug, organizationId: null } });
@@ -28,9 +74,11 @@ async function main() {
     }
   }
 
-  // Create roles (only keeping: Platform Super Admin, Admin, Content Manager, Learner)
+  // Create roles (only keeping: Super Admin, Admin, Content Manager, Learner).
+  // Slugs must match Keycloak realm role names exactly so the
+  // `realm_access.roles` claim from the JWT maps 1:1 to these slugs.
   const roles = [
-    { name: 'Platform Super Admin', slug: 'platform_super_admin', isSystem: true, permissions: ['*'] },
+    { name: 'Super Admin', slug: 'super_admin', isSystem: true, permissions: ['*'] },
     { name: 'Admin', slug: 'admin', isSystem: true, permissions: ['*'] },
     { name: 'Content Manager', slug: 'content_manager', isSystem: true, permissions: ['course:*', 'learning-path:*', 'user:read', 'enrollment:*', 'progress:*', 'discussion:write'] },
     { name: 'Learner', slug: 'learner', isSystem: true, permissions: ['course:enroll', 'course:read', 'lesson:read', 'lesson:complete', 'quiz:attempt', 'assignment:submit'] },
@@ -61,7 +109,7 @@ async function main() {
       },
     });
 
-    const superAdminRole = await prisma.role.findFirst({ where: { slug: 'platform_super_admin' } });
+    const superAdminRole = await prisma.role.findFirst({ where: { slug: 'super_admin' } });
     if (superAdminRole) {
       await prisma.userRole.create({
         data: {

@@ -56,7 +56,7 @@ function JsonView({ data, label }: { data: any; label?: string }) {
 export default function AdminAppLogsPage() {
   const { toast } = useToast();
   const roles = useRoles();
-  const isSuperAdmin = roles.includes('platform_super_admin');
+  const isSuperAdmin = roles.includes('super_admin');
 
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

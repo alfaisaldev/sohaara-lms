@@ -30,13 +30,15 @@ export interface RoleAssignment {
   expiresAt?: Date;
 }
 
+// Canonical role slugs. Must match Keycloak realm role names so the
+// `realm_access.roles` claim from the JWT maps 1:1 to these slugs.
+// Keycloak owns identity AND roles — these are the names the realm
+// declares in `roles.realm` and that the `oidc-usermodel-realm-role-mapper`
+// surfaces as `realm_access.roles` on every issued access_token.
 export const SystemRoles = {
-  PLATFORM_SUPER_ADMIN: 'platform_super_admin',
+  SUPER_ADMIN: 'super_admin',
   ADMIN: 'admin',
-  ORGANIZATION_ADMIN: 'organization_admin',
-  MANAGER: 'manager',
-  INSTRUCTOR: 'instructor',
-  TEACHING_ASSISTANT: 'teaching_assistant',
+  CONTENT_MANAGER: 'content_manager',
   LEARNER: 'learner',
 } as const;
 

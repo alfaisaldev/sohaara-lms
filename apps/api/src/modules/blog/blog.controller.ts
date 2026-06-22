@@ -50,7 +50,7 @@ export class BlogController {
 
   @Post('blog/categories')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create category' })
   async createCategory(@Body() body: any) {
     return this.blog.createCategory(body);
@@ -58,7 +58,7 @@ export class BlogController {
 
   @Put('blog/categories/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update category' })
   async updateCategory(@Param('id') id: string, @Body() body: any) {
     return this.blog.updateCategory(id, body);
@@ -66,7 +66,7 @@ export class BlogController {
 
   @Delete('blog/categories/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete category' })
   async deleteCategory(@Param('id') id: string) {
     return this.blog.deleteCategory(id);

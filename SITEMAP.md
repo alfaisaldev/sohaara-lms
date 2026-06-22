@@ -6,7 +6,7 @@
 |------|---------|
 | `PUB` | Public (no auth) |
 | `AUTH` | Any authenticated user |
-| `SA` | platform_super_admin |
+| `SA` | super_admin |
 | `AD` | admin |
 | `CM` | content_manager |
 | `LR` | learner |
@@ -292,13 +292,29 @@ All under `admin/layout.tsx` — require `adminToken` in localStorage.
 | Audit | GET | `/api/v1/audit-logs` | |
 | Audit | GET | `/api/v1/audit-logs/actions` | |
 
+### Admin panel — Keycloak user-management proxy (`super_admin`/`admin`)
+
+Browser-side admin-panel user management goes through these endpoints.
+Each one proxies to Keycloak's Admin REST API using a bootstrap
+`admin-cli` service-account token (cached 5 min in-process) — the
+browser never talks to Keycloak's Admin API directly.
+
+| Method | Route | Notes |
+|--------|-------|-------|
+| GET | `/api/v1/admin/users` | List + search (`?search=&page=&limit=`) |
+| POST | `/api/v1/admin/users` | Create user with `actions=[UPDATE_PASSWORD]`; Keycloak emails the set-password link |
+| POST | `/api/v1/admin/users/:id/roles` | Replace realm roles (`{ roles: ['admin','learner'] }`) |
+| POST | `/api/v1/admin/users/:id/disable` | `enabled=false` in Keycloak, `status='inactive'` in LMS |
+| POST | `/api/v1/admin/users/:id/enable` | Mirror of `/disable` |
+| POST | `/api/v1/admin/users/:id/send-reset` | Re-send the set-password email |
+
 ---
 
 ## Summary — Pages per role
 
 | Role | Web pages | Admin pages |
 |------|-----------|-------------|
-| platform_super_admin | 26 | 17 |
+| super_admin | 26 | 17 |
 | admin | 26 | 17 |
 | content_manager | 26 (minus restricted buttons) | 12 (sidebar) + 2 learners routes |
 | learner | 24 (no create/edit) | 1 (`/admin/login` only) |

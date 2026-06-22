@@ -41,7 +41,7 @@ export class OrganizationsController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create organization' })
   async create(@Body() body: { name: string; slug: string; description?: string; email?: string; website?: string }) {
     return this.orgService.create(body);
@@ -49,7 +49,7 @@ export class OrganizationsController {
 
   @Put(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update organization' })
   async update(@Param('id') id: string, @Body() body: any) {
     return this.orgService.update(id, body);
@@ -57,7 +57,7 @@ export class OrganizationsController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete organization' })
   async delete(@Param('id') id: string) {
     return this.orgService.delete(id);
@@ -71,7 +71,7 @@ export class OrganizationsController {
 
   @Post(':id/departments')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create department' })
   async createDepartment(@Param('id') id: string, @Body() body: any) {
     return this.orgService.createDepartment(id, body);
@@ -85,7 +85,7 @@ export class OrganizationsController {
 
   @Post(':id/teams')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create team' })
   async createTeam(@Param('id') id: string, @Body() body: any) {
     return this.orgService.createTeam(id, body);
@@ -99,7 +99,7 @@ export class OrganizationsController {
 
   @Post(':id/groups')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create group' })
   async createGroup(@Param('id') id: string, @Body() body: any) {
     return this.orgService.createGroup(id, body);
@@ -107,7 +107,7 @@ export class OrganizationsController {
 
   @Put(':id/assign-courses')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Assign courses to this organization' })
   async assignCourses(@Param('id') id: string, @Body() body: { courseIds: string[] }) {
     return this.orgService.assignCourses(id, body.courseIds);
@@ -115,7 +115,7 @@ export class OrganizationsController {
 
   @Put(':id/assign-learning-paths')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Assign learning paths to this organization' })
   async assignLearningPaths(@Param('id') id: string, @Body() body: { learningPathIds: string[] }) {
     return this.orgService.assignLearningPaths(id, body.learningPathIds);

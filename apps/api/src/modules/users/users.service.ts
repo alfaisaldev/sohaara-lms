@@ -199,7 +199,7 @@ export class UsersService {
     const user = await this.db.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    const superAdminSlug = 'platform_super_admin';
+    const superAdminSlug = 'super_admin';
     const targetRoles = await this.db.userRole.findMany({
       where: { userId: id },
       include: { role: true },

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './modules/auth/auth.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { CoursesModule } from './modules/courses/courses.module';
@@ -21,6 +22,7 @@ import { SearchModule } from './modules/search/search.module';
 import { NotificationsModule } from './modules/notifications/notification.module';
 import { MediaModule } from './modules/media/media.module';
 import { ScormModule } from './modules/scorm/scorm.module';
+import { StorageModule } from './modules/storage/storage.module';
 import { AuditLogModule } from './modules/audit/audit.module';
 import { AppLogsModule } from './modules/app-logs/app-logs.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -38,6 +40,10 @@ import { ConfigModule } from './modules/config/config.module';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    // AdminModule must come after AuthModule so the RolesGuard it
+    // depends on is resolvable. It exposes /api/v1/admin/users*
+    // endpoints that proxy to Keycloak's Admin REST API.
+    AdminModule,
     UsersModule,
     OrganizationsModule,
     CoursesModule,
@@ -57,6 +63,7 @@ import { ConfigModule } from './modules/config/config.module';
     NotificationsModule,
     MediaModule,
     ScormModule,
+    StorageModule,
     ReportsModule,
     AuditLogModule,
     AppLogsModule,

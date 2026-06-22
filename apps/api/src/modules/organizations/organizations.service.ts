@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import * as crypto from 'crypto';
 
@@ -21,6 +21,17 @@ function decryptId(token: string): string {
   const encrypted = Buffer.from(parts[1]!, 'hex');
   const decipher = crypto.createDecipheriv(ALGO, key, iv);
   return decipher.update(encrypted) + decipher.final('utf8');
+}
+
+/**
+ * Fingerprint a decrypted invite token for single-use tracking.
+ *
+ * We don't store the token itself (it would defeat the purpose of
+ * encrypting it) — we store its SHA-256 hash, which is what gets
+ * recorded in `Organization.settings.consumedInvites[]`.
+ */
+function fingerprint(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 @Injectable()
@@ -87,6 +98,55 @@ export class OrganizationsService {
 
   getInviteToken(orgId: string): string {
     return encryptId(orgId);
+  }
+
+  /**
+   * Single-use enforcement on invite links. The invite token is
+   * deterministic per `orgId` (encrypted form), so re-using the same
+   * link would re-attach a different signup to the same org. We
+   * record a SHA-256 fingerprint of the consumed token on the
+   * organization's `settings.consumedInvites[]` JSON array; on the
+   * next callback, we reject the token if its fingerprint is already
+   * in the list.
+   *
+   * Storing the fingerprint (not the raw token) keeps the secret
+   * value single-use even if the settings column leaks.
+   */
+  async consumeInvite(orgId: string, token: string): Promise<void> {
+    const org = await this.db.organization.findUnique({
+      where: { id: orgId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organization not found');
+
+    const settings = (org.settings as Record<string, any>) || {};
+    const consumed: string[] = Array.isArray(settings.consumedInvites) ? settings.consumedInvites : [];
+    const fp = fingerprint(token);
+    if (consumed.includes(fp)) {
+      throw new BadRequestException('Invite link has already been used');
+    }
+    consumed.push(fp);
+    settings.consumedInvites = consumed;
+    await this.db.organization.update({
+      where: { id: orgId },
+      data: { settings: settings as any },
+    });
+  }
+
+  /**
+   * Check whether an invite token has already been consumed. Used by
+   * the auth exchange path BEFORE creating the LMS `User` row, so we
+   * never provision a half-account against a spent link.
+   */
+  async isInviteConsumed(orgId: string, token: string): Promise<boolean> {
+    const org = await this.db.organization.findUnique({
+      where: { id: orgId },
+      select: { settings: true },
+    });
+    if (!org) return true; // unknown org → treat as "consumed" so we never attach
+    const settings = (org.settings as Record<string, any>) || {};
+    const consumed: string[] = Array.isArray(settings.consumedInvites) ? settings.consumedInvites : [];
+    return consumed.includes(fingerprint(token));
   }
 
   async findById(id: string) {

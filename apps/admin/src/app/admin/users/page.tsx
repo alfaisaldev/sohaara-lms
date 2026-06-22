@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const roles = useRoles();
-  const isAdmin = roles.includes('admin') || roles.includes('platform_super_admin');
+  const isAdmin = roles.includes('admin') || roles.includes('super_admin');
   const effectiveRoleFilter = roles.includes('content_manager') ? 'learner' : roleFilter;
 
   const fetchUsers = useCallback(() => {

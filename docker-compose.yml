@@ -40,20 +40,52 @@ services:
       # Emulator Meilisearch (master key from emulator .env).
       MEILISEARCH_URL: http://emu-meilisearch:7700
       MEILISEARCH_KEY: sohaara_dev_master_key
-      # Emulator MinIO (S3).
+      # Emulator MinIO (S3). The api has three buckets it writes to:
+      #   sohaara-uploads       — Media Library, avatars
+      #   sohaara-scorm         — extracted SCORM package contents
+      #   sohaara-certificates  — certificate template images and logos
+      # MINIO_BUCKET is kept for back-compat (defaults to the uploads one).
       MINIO_ENDPOINT: emu-minio
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: sohaara
       MINIO_SECRET_KEY: sohaara_dev_password
-      MINIO_BUCKET: sohaara-lms
+      MINIO_BUCKET: sohaara-uploads
+      MINIO_BUCKET_UPLOADS: sohaara-uploads
+      MINIO_BUCKET_SCORM: sohaara-scorm
+      MINIO_BUCKET_CERTIFICATES: sohaara-certificates
+      MINIO_BUCKET_MEDIA: sohaara-media
       MINIO_USE_SSL: "false"
       STORAGE_PROVIDER: minio
-      # Emulator Keycloak (OIDC). Kept for future use — current LMS runtime
-      # still uses local JWT, but the env is wired so flipping AUTH_PROVIDER
-      # later is a one-line change.
+      # Public URL prefix used when building browser-facing URLs for stored
+      # objects. The api's GET /uploads/* route streams the bytes back, so
+      # this is just `${API_URL}/uploads` (same host as the api).
+      STORAGE_PUBLIC_URL: http://localhost:4000/uploads
+      # Emulator Keycloak (OIDC). Used for OIDC verification (JWKS),
+      # the Admin REST API bootstrap (KeycloakAdminService), and the
+      # `/auth/keycloak/exchange` token-verification path. Public-URL
+      # form is the host port-forward — that's the `iss` a browser
+      # will mint against. `KEYCLOAK_ADMIN_USERNAME` /
+      # `KEYCLOAK_ADMIN_PASSWORD` are the bootstrap credentials for
+      # the realm's built-in `admin-cli` service account; they live
+      # in the api container env, not in the browser bundle.
       KEYCLOAK_URL: http://emu-keycloak:8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
       KEYCLOAK_REALM: sohaara
       KEYCLOAK_CLIENT_ID: sohaara-api
+      # Service-account client used for Admin REST API calls. See
+      # `KeycloakAdminService` — the bootstrap flow uses
+      # `client_credentials` against this client. The secret must
+      # match `aws-emulator/keycloak/realms/sohaara.json`. Server-only
+      # (NEVER prefix with NEXT_PUBLIC_, must not reach the browser).
+      KEYCLOAK_ADMIN_CLIENT_ID: sohaara-admin-bootstrap
+      KEYCLOAK_ADMIN_CLIENT_SECRET: sohaara-admin-bootstrap-secret-change-me
+      # Legacy username/password env vars kept for back-compat with
+      # the previous `admin-cli` + password-grant bootstrap. Not used
+      # by the current `client_credentials` flow but the getters in
+      # `ConfigService` still read them for any code path that falls
+      # back to the old behaviour.
+      KEYCLOAK_ADMIN_USERNAME: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
       AUTH_PROVIDER: local
       # Emulator Mailhog (SMTP receive-only).
       SMTP_HOST: emu-mailhog
@@ -90,6 +122,21 @@ services:
     build:
       context: .
       dockerfile: .docker/web.Dockerfile
+      args:
+        # Browser-reachable origin (inlined into the client bundle and
+        # used by next.config.ts CSP + middleware.ts). The browser hits
+        # the api through the host port-forward at localhost:4000.
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_APP_URL: http://localhost:3000
+        # Server-only origin used by next.config.ts rewrites to talk to
+        # the api container by its docker service name.
+        API_INTERNAL_URL: http://api:4000
+        # Keycloak OIDC client config — inlined into the client bundle
+        # by Next.js (NEXT_PUBLIC_*) and read by `apps/web/src/lib/oidc.ts`.
+        # Use the host port-forward so the browser can reach Keycloak.
+        NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
+        NEXT_PUBLIC_KEYCLOAK_REALM: sohaara
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: sohaara-web
     container_name: sohaara-web
     restart: unless-stopped
     ports:
@@ -120,6 +167,17 @@ services:
     build:
       context: .
       dockerfile: .docker/admin.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_APP_URL: http://localhost:3001
+        API_INTERNAL_URL: http://api:4000
+        # Same Keycloak client config as the web app but with
+        # `sohaara-admin` as the client_id (separate OIDC client in
+        # the realm — separate redirect URIs, separate post-logout
+        # landing at `/admin/auth/logged-out`).
+        NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
+        NEXT_PUBLIC_KEYCLOAK_REALM: sohaara
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: sohaara-admin
     container_name: sohaara-admin
     restart: unless-stopped
     ports:

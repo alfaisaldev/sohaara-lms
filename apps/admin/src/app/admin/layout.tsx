@@ -25,7 +25,7 @@ const sidebarItems = [
   { label: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
   { label: 'Media', href: '/admin/media', icon: Image, roles: ['admin'] },
   { label: 'Log', href: '/admin/audit', icon: ShieldAlert, roles: ['admin'] },
-  { label: 'App Logs', href: '/admin/audit/app-logs', icon: Terminal, roles: ['platform_super_admin'] },
+  { label: 'App Logs', href: '/admin/audit/app-logs', icon: Terminal, roles: ['super_admin'] },
 ];
 
 export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -36,7 +36,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
   const roles = useRoles();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const visibleItems = sidebarItems.filter((item) => item.roles.some((r) => roles.includes(r)) || roles.includes('platform_super_admin'));
+  const visibleItems = sidebarItems.filter((item) => item.roles.some((r) => roles.includes(r)) || roles.includes('super_admin'));
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -47,15 +47,18 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
   const displayEmail = user?.email || 'admin@sohaara.com';
   const userRole = roles[0] || 'admin';
 
-  const isLoginPage = pathname === '/admin/login';
+  // The single auth entry point and its siblings (callback, logout,
+  // logged-out) render without the sidebar — they're public-facing
+  // OIDC round-trip pages, not authenticated admin sections.
+  const isAuthPage = pathname?.startsWith('/admin/auth') ?? false;
 
   useEffect(() => {
-    if (mounted && !isAuthenticated && pathname !== '/admin/login') {
-      router.replace('/admin/login');
+    if (mounted && !isAuthenticated && !isAuthPage) {
+      router.replace('/admin/auth/start');
     }
-  }, [isAuthenticated, mounted, router]);
+  }, [isAuthenticated, mounted, router, isAuthPage]);
 
-  if (isLoginPage) {
+  if (isAuthPage) {
     return <>{children}</>;
   }
 

@@ -32,7 +32,7 @@ export class LearningPathController {
 
   @Get('learning-paths/join-requests/pending')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Get pending join requests' })
   async getPendingJoinRequests(@Req() req: any) {
     return this.lp.getPendingJoinRequests(req.user.organizationId);
@@ -151,7 +151,7 @@ export class LearningPathController {
 
   @Put('learning-paths/join-requests/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'content_manager', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Approve or deny a join request' })
   async reviewJoinRequest(@Req() req: any, @Param('id') id: string, @Body() body: { action: 'approved' | 'denied' }) {
     return this.lp.reviewJoinRequest(id, req.user.id, body.action);

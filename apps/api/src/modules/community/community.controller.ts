@@ -48,7 +48,7 @@ export class CommunityController {
 
   @Post('community/posts/:id/pin')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Toggle pin post' })
   async togglePin(@Param('id') id: string) {
     return this.community.togglePin(id);

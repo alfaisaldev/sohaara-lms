@@ -39,7 +39,7 @@ export class UsersController {
 
   @Put(':id')
   @UseGuards(RolesGuard)
-  @Roles('platform_super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Update user (super admin only)' })
   async update(@Param('id') id: string, @Body() body: any) {
     return this.usersService.update(id, body);
@@ -61,7 +61,7 @@ export class UsersController {
 
   @Put(':id/profile')
   @UseGuards(RolesGuard)
-  @Roles('platform_super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Update user profile (super admin only)' })
   async updateProfile(@Param('id') id: string, @Body() body: any) {
     return this.usersService.updateProfile(id, body);
@@ -75,7 +75,7 @@ export class UsersController {
 
   @Post(':id/roles')
   @UseGuards(RolesGuard)
-  @Roles('platform_super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Assign role to user (super admin only)' })
   async assignRole(@Param('id') id: string, @Body() body: { roleId: string }, @Req() req: any) {
     return this.usersService.assignRole(id, body.roleId, req.user.id);
@@ -83,7 +83,7 @@ export class UsersController {
 
   @Delete(':id/roles/:roleId')
   @UseGuards(RolesGuard)
-  @Roles('platform_super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Remove role from user (super admin only)' })
   async removeRole(@Param('id') id: string, @Param('roleId') roleId: string) {
     return this.usersService.removeRole(id, roleId);

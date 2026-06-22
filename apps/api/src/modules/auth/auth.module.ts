@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalAuthProvider } from './providers/local-auth.provider';
 import { RolesGuard } from './guards/roles.guard';
 import { ConfigService } from '../config/config.service';
+import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Module({
   imports: [
@@ -22,6 +23,13 @@ import { ConfigService } from '../config/config.service';
         },
       }),
     }),
+    // `AuthService.exchangeKeycloakToken` resolves and consumes invite
+    // tokens server-side. We import `OrganizationsModule` so the
+    // existing `OrganizationsService` (which owns the AES-256-CBC
+    // token format + the consumedInvites bookkeeping) is available
+    // here. No circular dep — `OrganizationsModule` does not import
+    // `AuthModule`.
+    OrganizationsModule,
   ],
   controllers: [AuthController, RolesController],
   providers: [AuthService, JwtStrategy, LocalAuthProvider, RolesGuard],

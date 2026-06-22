@@ -44,7 +44,7 @@ export default function AdminAuditLogPage() {
   const [reverting, setReverting] = useState(false);
 
   const roles = useRoles();
-  const isSuperAdmin = roles.includes('platform_super_admin');
+  const isSuperAdmin = roles.includes('super_admin');
 
   const handleRevert = async () => {
     if (!revertTarget) return;

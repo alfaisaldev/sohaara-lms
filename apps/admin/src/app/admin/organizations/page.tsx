@@ -34,7 +34,7 @@ export default function AdminOrganizationsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const roles = useRoles();
-  const isAdmin = roles.includes('admin') || roles.includes('platform_super_admin');
+  const isAdmin = roles.includes('admin') || roles.includes('super_admin');
 
   const fetch = useCallback(() => {
     setLoading(true);

@@ -26,7 +26,7 @@ export class ResourceController {
 
   @Post('courses/:courseId/resources')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'instructor', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Add a resource' })
   async create(@Param('courseId') courseId: string, @Body() body: any) {
     return this.resource.create({ ...body, courseId });
@@ -34,7 +34,7 @@ export class ResourceController {
 
   @Put('resources/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'instructor', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Update resource' })
   async update(@Param('id') id: string, @Body() body: any) {
     return this.resource.update(id, body);
@@ -42,7 +42,7 @@ export class ResourceController {
 
   @Delete('resources/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'instructor', 'platform_super_admin')
+  @Roles('admin', 'content_manager', 'super_admin')
   @ApiOperation({ summary: 'Delete resource' })
   async delete(@Param('id') id: string) {
     return this.resource.delete(id);

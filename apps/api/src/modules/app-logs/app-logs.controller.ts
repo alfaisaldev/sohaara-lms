@@ -6,7 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('app-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_super_admin')
+@Roles('super_admin')
 export class AppLogsController {
   constructor(private readonly appLogs: AppLogsService) {}
 

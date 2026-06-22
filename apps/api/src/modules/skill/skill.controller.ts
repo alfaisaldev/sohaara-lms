@@ -20,7 +20,7 @@ export class SkillController {
 
   @Post('skills/categories')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create skill category' })
   async createCategory(@Body() body: any, @Req() req: any) {
     return this.skill.createCategory({ ...body, organizationId: req.user.organizationId });
@@ -28,7 +28,7 @@ export class SkillController {
 
   @Put('skills/categories/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update skill category' })
   async updateCategory(@Param('id') id: string, @Body() body: any) {
     return this.skill.updateCategory(id, body);
@@ -36,7 +36,7 @@ export class SkillController {
 
   @Delete('skills/categories/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete skill category' })
   async deleteCategory(@Param('id') id: string) {
     return this.skill.deleteCategory(id);
@@ -44,7 +44,7 @@ export class SkillController {
 
   @Post('skills')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create a skill' })
   async createSkill(@Body() body: any) {
     return this.skill.createSkill(body);
@@ -52,7 +52,7 @@ export class SkillController {
 
   @Put('skills/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update a skill' })
   async updateSkill(@Param('id') id: string, @Body() body: any) {
     return this.skill.updateSkill(id, body);
@@ -60,7 +60,7 @@ export class SkillController {
 
   @Delete('skills/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete a skill' })
   async deleteSkill(@Param('id') id: string) {
     return this.skill.deleteSkill(id);

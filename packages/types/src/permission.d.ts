@@ -28,12 +28,9 @@ export interface RoleAssignment {
     expiresAt?: Date;
 }
 export declare const SystemRoles: {
-    readonly PLATFORM_SUPER_ADMIN: "platform_super_admin";
+    readonly SUPER_ADMIN: "super_admin";
     readonly ADMIN: "admin";
-    readonly ORGANIZATION_ADMIN: "organization_admin";
-    readonly MANAGER: "manager";
-    readonly INSTRUCTOR: "instructor";
-    readonly TEACHING_ASSISTANT: "teaching_assistant";
+    readonly CONTENT_MANAGER: "content_manager";
     readonly LEARNER: "learner";
 };
 export type SystemRole = (typeof SystemRoles)[keyof typeof SystemRoles];

@@ -1,41 +1,72 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ConfigService } from '../config/config.service';
+import { createStorageProvider, StorageProvider } from '@sohaara/storage';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class MediaService {
-  private uploadDir: string;
-  private baseUrl: string;
+  private readonly logger = new Logger(MediaService.name);
+  private readonly storage: StorageProvider;
+  private readonly publicUrlPrefix: string;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly config: ConfigService,
   ) {
-    this.uploadDir = path.resolve(process.cwd(), 'uploads');
-    this.baseUrl = `${this.config.apiUrl}/uploads`;
+    this.storage = createStorageProvider({
+      provider: this.config.storageProvider,
+      bucket: this.config.minioBucketUploads,
+      local: {
+        uploadDir: path.resolve(process.cwd(), 'uploads'),
+      },
+      s3: {
+        endpoint: this.config.minioEndpoint,
+        port: this.config.minioPort,
+        accessKey: this.config.minioAccessKey,
+        secretKey: this.config.minioSecretKey,
+        useSsl: this.config.minioUseSsl,
+        region: process.env.AWS_REGION || 'us-east-1',
+      },
+    });
+    this.publicUrlPrefix = this.config.storagePublicUrl;
+    this.logger.log(`MediaService using ${this.storage.name} provider, bucket=${this.storage.bucket}`);
+  }
+
+  /**
+   * Build the `<type>/<yyyy-mm-dd>/<uuid>.<ext>` key used for media objects.
+   */
+  private buildKey(file: Express.Multer.File): string {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const dir = this.getDirectory(file.mimetype);
+    const day = new Date().toISOString().slice(0, 10);
+    return `${dir}/${day}/${uuidv4()}${ext}`;
+  }
+
+  /**
+   * Convert a storage key (e.g. `images/2026-06-20/abc.png`) into the public
+   * URL stored in the DB. With the default `storagePublicUrl` of
+   * `${apiUrl}/uploads`, the URL is `http://localhost:4000/uploads/images/...`,
+   * which the api streams back from MinIO.
+   */
+  private buildUrl(key: string): string {
+    return `${this.publicUrlPrefix.replace(/\/+$/, '')}/${key}`;
   }
 
   async upload(
     file: Express.Multer.File,
     metadata: { userId: string; organizationId?: string; name?: string; folderId?: string; alt?: string; tags?: string[] },
   ) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const dir = this.getDirectory(file.mimetype);
-    const subDir = path.join(dir, new Date().toISOString().slice(0, 10));
-    const dirPath = path.join(this.uploadDir, subDir);
-    const fileName = `${uuidv4()}${ext}`;
-    const filePath = path.join(dirPath, fileName);
+    const key = this.buildKey(file);
+    await this.storage.upload({
+      key,
+      body: file.buffer,
+      contentType: file.mimetype,
+    });
 
-    await fs.mkdir(dirPath, { recursive: true });
-    await fs.writeFile(filePath, file.buffer);
-
-    const url = `${this.baseUrl}/${subDir}/${fileName}`;
-    const thumbUrl = file.mimetype.startsWith('image/')
-      ? url
-      : null;
+    const url = this.buildUrl(key);
+    const thumbUrl = file.mimetype.startsWith('image/') ? url : null;
 
     return this.db.media.create({
       data: {
@@ -108,11 +139,34 @@ export class MediaService {
     const media = await this.db.media.findUnique({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
 
-    const localPath = media.url.replace(this.baseUrl, this.uploadDir);
-    try { await fs.unlink(localPath); } catch {}
+    const key = this.urlToKey(media.url);
+    if (key) {
+      try { await this.storage.delete(key); } catch (e: any) {
+        this.logger.warn(`Storage delete failed for ${key}: ${e?.message}`);
+      }
+    }
 
     await this.db.media.delete({ where: { id } });
     return { message: 'Media deleted' };
+  }
+
+  /**
+   * Reverse of `buildUrl`: turn the public URL back into the storage key.
+   * Strips the `storagePublicUrl` prefix and any leading slash.
+   */
+  private urlToKey(url: string): string | null {
+    const prefix = this.publicUrlPrefix.replace(/\/+$/, '');
+    if (!url.startsWith(prefix + '/')) return null;
+    return url.slice(prefix.length + 1);
+  }
+
+  /**
+   * Stream a file from the underlying storage provider. Used by the
+   * `GET /uploads/*` controller route so the api can serve files it stored
+   * in MinIO (and fall back to local disk for SCORM / pre-existing files).
+   */
+  async streamFile(key: string): Promise<{ body: Buffer; contentType: string } | null> {
+    return this.storage.getBuffer(key);
   }
 
   private getDirectory(mimeType: string): string {
@@ -138,10 +192,7 @@ export class MediaService {
   async listFolders(organizationId?: string) {
     const where: any = {};
     if (organizationId) where.organizationId = organizationId;
-    return this.db.mediaFolder.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+    return this.db.mediaFolder.findMany({ where, orderBy: { name: 'asc' } });
   }
 
   async deleteFolder(id: string) {
@@ -157,21 +208,10 @@ export class MediaService {
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {
     const ext = path.extname(file.originalname).toLowerCase();
-    const dir = 'avatars';
-    const dirPath = path.join(this.uploadDir, dir);
-    const fileName = `${userId}${ext}`;
-    const filePath = path.join(dirPath, fileName);
+    const key = `avatars/${userId}${ext}`;
+    await this.storage.upload({ key, body: file.buffer, contentType: file.mimetype });
 
-    await fs.mkdir(dirPath, { recursive: true });
-    try {
-      const oldFiles = await fs.readdir(dirPath);
-      for (const f of oldFiles) {
-        if (f.startsWith(userId)) await fs.unlink(path.join(dirPath, f));
-      }
-    } catch {}
-
-    await fs.writeFile(filePath, file.buffer);
-    const url = `${this.baseUrl}/${dir}/${fileName}`;
+    const url = this.buildUrl(key);
 
     await this.db.user.update({ where: { id: userId }, data: { avatar: url } });
 

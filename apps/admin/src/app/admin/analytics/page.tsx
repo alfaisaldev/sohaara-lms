@@ -11,7 +11,7 @@ export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const roles = useRoles();
   const isContentManager = roles.includes('content_manager') || roles.includes('learner');
-  const isAdmin = roles.includes('admin') || roles.includes('platform_super_admin');
+  const isAdmin = roles.includes('admin') || roles.includes('super_admin');
 
   useEffect(() => {
     api.get<any>('/analytics/dashboard')

@@ -4,7 +4,11 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { join } from 'path';
+import * as fs from 'fs';
+import * as express from 'express';
+import type { Request, Response } from 'express';
 import { AppModule } from './app.module';
+import { StorageRouterService } from './modules/storage/storage-router.service';
 
 (BigInt.prototype as any).toJSON = function () {
   return Number(this);
@@ -14,15 +18,51 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.setGlobalPrefix('api/v1');
+  // All controllers get the `api/v1` prefix EXCEPT `/uploads/*` — those URLs
+  // are stored verbatim in the database (e.g.
+  // `http://localhost:4000/uploads/images/...`) and are served by the raw
+  // Express middleware below, which must run outside the Nest router to
+  // stay unprefixed.
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'uploads/(.*)', method: 0 /* RequestMethod.GET */ }],
+  });
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads',
-    index: false,
-    setHeaders: (res) => {
+  // /uploads/* — public file serving for stored assets.
+  //
+  // Tries local disk first (legacy / SCORM-extracted / pre-migration files),
+  // then falls back to the MinIO-backed storage router. Both code paths set
+  // permissive CORS so <img> tags and Next.js rewrites can fetch them
+  // without an Authorization header.
+  const uploadsRoot = join(process.cwd(), 'uploads');
+  const storageRouter = app.get(StorageRouterService);
+  // Mounted under `/uploads`, so req.path is the key portion (`/<key>`)
+  // with the `/uploads` prefix already stripped by Express.
+  app.use('/uploads', async (req: Request, res: Response, next: express.NextFunction) => {
+    const key = (req.path || '').replace(/^\/+/, '');
+    if (!key || key.includes('..')) return next();
+    const localPath = join(uploadsRoot, key);
+    if (
+      localPath.startsWith(uploadsRoot) &&
+      fs.existsSync(localPath) &&
+      fs.statSync(localPath).isFile()
+    ) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    },
+      res.sendFile(localPath);
+      return;
+    }
+    try {
+      const stored = await storageRouter.streamFile(key);
+      if (!stored) return next();
+      res.setHeader('Content-Type', stored.contentType);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(stored.body);
+    } catch (e: any) {
+      logger.warn(`/uploads fallback failed for ${key}: ${e?.message}`);
+      next(e);
+    }
   });
 
   app.use(helmet({

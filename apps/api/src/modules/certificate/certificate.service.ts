@@ -1,24 +1,52 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ConfigService } from '../config/config.service';
+import { createStorageProvider, StorageProvider } from '@sohaara/storage';
 import { v4 as uuid } from 'uuid';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 
 const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 @Injectable()
 export class CertificateService {
-  private uploadDir: string;
-  private baseUrl: string;
+  private readonly logger = new Logger(CertificateService.name);
+  private readonly storage: StorageProvider;
+  private readonly publicUrlPrefix: string;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly config: ConfigService,
   ) {
-    this.uploadDir = path.resolve(process.cwd(), 'uploads');
-    this.baseUrl = `${this.config.apiUrl}/uploads`;
+    this.storage = createStorageProvider({
+      provider: this.config.storageProvider,
+      bucket: this.config.minioBucketCertificates,
+      local: {
+        uploadDir: path.resolve(process.cwd(), 'uploads'),
+      },
+      s3: {
+        endpoint: this.config.minioEndpoint,
+        port: this.config.minioPort,
+        accessKey: this.config.minioAccessKey,
+        secretKey: this.config.minioSecretKey,
+        useSsl: this.config.minioUseSsl,
+        region: process.env.AWS_REGION || 'us-east-1',
+      },
+    });
+    this.publicUrlPrefix = this.config.storagePublicUrl;
+    this.logger.log(`CertificateService using ${this.storage.name} provider, bucket=${this.storage.bucket}`);
+  }
+
+  /** Convert a key (e.g. `certificates/backgrounds/abc.png`) to the public URL. */
+  private buildUrl(key: string): string {
+    return `${this.publicUrlPrefix.replace(/\/+$/, '')}/${key}`;
+  }
+
+  /** Reverse of `buildUrl`. */
+  private urlToKey(url: string): string | null {
+    const prefix = this.publicUrlPrefix.replace(/\/+$/, '');
+    if (!url.startsWith(prefix + '/')) return null;
+    return url.slice(prefix.length + 1);
   }
 
   // ─── Certificates ───
@@ -254,20 +282,17 @@ export class CertificateService {
     if (!tpl) throw new NotFoundException('Template not found');
 
     const ext = path.extname(file.originalname).toLowerCase() || '.png';
-    const dir = 'certificates/backgrounds';
-    const dirPath = path.join(this.uploadDir, dir);
-    const fileName = `${templateId}-${uuid().slice(0, 8)}${ext}`;
-    const filePath = path.join(dirPath, fileName);
+    const key = `certificates/backgrounds/${templateId}-${uuid().slice(0, 8)}${ext}`;
+    await this.storage.upload({ key, body: file.buffer, contentType: file.mimetype });
 
-    await fs.mkdir(dirPath, { recursive: true });
-    await fs.writeFile(filePath, file.buffer);
+    const url = this.buildUrl(key);
 
-    const url = `${this.baseUrl}/${dir}/${fileName}`;
-
-    // Optionally remove the previous file
+    // Remove the previous file (best effort)
     if (tpl.backgroundImageUrl) {
-      const prev = tpl.backgroundImageUrl.replace(this.baseUrl, this.uploadDir);
-      try { await fs.unlink(prev); } catch {}
+      const prevKey = this.urlToKey(tpl.backgroundImageUrl);
+      if (prevKey) {
+        try { await this.storage.delete(prevKey); } catch {}
+      }
     }
 
     return this.db.certificateTemplate.update({
@@ -280,8 +305,10 @@ export class CertificateService {
     const tpl = await this.db.certificateTemplate.findUnique({ where: { id: templateId } });
     if (!tpl) throw new NotFoundException('Template not found');
     if (tpl.backgroundImageUrl) {
-      const prev = tpl.backgroundImageUrl.replace(this.baseUrl, this.uploadDir);
-      try { await fs.unlink(prev); } catch {}
+      const prevKey = this.urlToKey(tpl.backgroundImageUrl);
+      if (prevKey) {
+        try { await this.storage.delete(prevKey); } catch {}
+      }
     }
     return this.db.certificateTemplate.update({
       where: { id: templateId },
@@ -308,15 +335,10 @@ export class CertificateService {
     }
 
     const ext = path.extname(file.originalname).toLowerCase() || '.png';
-    const dir = 'certificates/logos';
-    const dirPath = path.join(this.uploadDir, dir);
-    const fileName = `${uuid()}${ext}`;
-    const filePath = path.join(dirPath, fileName);
+    const key = `certificates/logos/${uuid()}${ext}`;
+    await this.storage.upload({ key, body: file.buffer, contentType: file.mimetype });
 
-    await fs.mkdir(dirPath, { recursive: true });
-    await fs.writeFile(filePath, file.buffer);
-
-    const url = `${this.baseUrl}/${dir}/${fileName}`;
+    const url = this.buildUrl(key);
 
     return this.db.certificateLogo.create({
       data: {
@@ -332,8 +354,10 @@ export class CertificateService {
   async deleteLogo(id: string) {
     const logo = await this.db.certificateLogo.findUnique({ where: { id } });
     if (!logo) throw new NotFoundException('Logo not found');
-    const localPath = logo.url.replace(this.baseUrl, this.uploadDir);
-    try { await fs.unlink(localPath); } catch {}
+    const key = this.urlToKey(logo.url);
+    if (key) {
+      try { await this.storage.delete(key); } catch {}
+    }
     await this.db.certificateLogo.delete({ where: { id } });
     return { message: 'Logo deleted' };
   }

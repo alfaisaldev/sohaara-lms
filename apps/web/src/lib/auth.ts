@@ -30,13 +30,13 @@ export function usePermissions(): string[] {
 
 export function useCan(...roles: string[]): boolean {
   const userRoles = useRoles();
-  if (userRoles.includes('platform_super_admin')) return true;
+  if (userRoles.includes('super_admin')) return true;
   return roles.some((r) => userRoles.includes(r));
 }
 
 export function useHasPermission(permission: string): boolean {
   const perms = usePermissions();
-  if (useRoles().includes('platform_super_admin')) return true;
+  if (useRoles().includes('super_admin')) return true;
   return perms.includes('*') || perms.includes(permission);
 }
 
@@ -62,8 +62,13 @@ export function clearAuth(tokenKey = 'accessToken') {
 }
 
 export function logout(tokenKey = 'accessToken') {
-  clearAuth(tokenKey);
+  // Navigate to the app's single OIDC logout page, which calls
+  // userManager.signoutRedirect() and ends the Keycloak session.
+  // The LMS doesn't clear its localStorage here — /auth/logged-out
+  // does that after the Keycloak end-session round-trip completes,
+  // so a logout that fails (network error, user closed the tab
+  // mid-redirect) doesn't lose the LMS session state to no purpose.
   if (typeof window !== 'undefined') {
-    window.location.href = tokenKey === 'adminToken' ? '/admin/login' : '/auth/login';
+    window.location.href = tokenKey === 'adminToken' ? '/admin/auth/logout' : '/auth/logout';
   }
 }

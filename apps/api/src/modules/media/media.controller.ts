@@ -30,7 +30,9 @@ const ALLOWED_MIME_TYPES = [
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(
+    private readonly mediaService: MediaService,
+  ) {}
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
@@ -90,7 +92,7 @@ export class MediaController {
 
   @Post('folders')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create folder' })
   async createFolder(@Body() body: { name: string; parentId?: string }, @Req() req: any) {
     if (!body.name) throw new BadRequestException('Folder name is required');
@@ -109,7 +111,7 @@ export class MediaController {
 
   @Delete('folders/:id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete folder' })
   async deleteFolder(@Param('id') id: string) {
     return this.mediaService.deleteFolder(id);
@@ -125,7 +127,7 @@ export class MediaController {
 
   @Put(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Update media metadata' })
   async update(@Param('id') id: string, @Body() body: any) {
     return this.mediaService.update(id, body);
@@ -133,7 +135,7 @@ export class MediaController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'platform_super_admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete media' })
   async delete(@Param('id') id: string) {
     return this.mediaService.delete(id);

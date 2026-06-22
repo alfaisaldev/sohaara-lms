@@ -19,6 +19,13 @@ FROM deps AS builder
 WORKDIR /app
 COPY . .
 RUN pnpm --filter @sohaara/database run generate
+# Build the @sohaara/storage package first — its package.json `main` points
+# at `dist/index.js`, so the api's compiled JS (which does
+# `require('@sohaara/storage')`) needs that file to exist at runtime. The api
+# build also recompiles the package source into apps/api/dist/ for its own
+# internal use, but Node follows the pnpm symlink to packages/storage/ at
+# runtime, so the package's own dist is what gets loaded.
+RUN pnpm --filter @sohaara/storage run build
 RUN pnpm --filter @sohaara/api run build
 
 FROM base AS runner

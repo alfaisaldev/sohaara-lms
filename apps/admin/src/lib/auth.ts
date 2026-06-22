@@ -32,7 +32,7 @@ export function usePermissions(): string[] {
 
 export function useCan(...roles: string[]): boolean {
   const userRoles = useRoles();
-  if (userRoles.includes('platform_super_admin')) return true;
+  if (userRoles.includes('super_admin')) return true;
   return roles.some((r) => userRoles.includes(r));
 }
 
@@ -60,8 +60,11 @@ export function clearAuth() {
 }
 
 export function logout() {
-  clearAuth();
+  // Navigate to the admin app's single OIDC logout page. The Keycloak
+  // session is ended by userManager.signoutRedirect() there; LMS
+  // localStorage is cleared by /admin/auth/logged-out after the
+  // end-session redirect lands.
   if (typeof window !== 'undefined') {
-    window.location.href = '/admin/login';
+    window.location.href = '/admin/auth/logout';
   }
 }

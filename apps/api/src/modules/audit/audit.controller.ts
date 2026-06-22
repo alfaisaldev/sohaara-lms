@@ -8,7 +8,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @ApiTags('Audit Logs')
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'platform_super_admin')
+@Roles('admin', 'super_admin')
 @ApiBearerAuth()
 export class AuditLogController {
   constructor(private readonly audit: AuditLogService) {}
@@ -32,7 +32,7 @@ export class AuditLogController {
   }
 
   @Post(':id/revert')
-  @Roles('platform_super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Revert an audit log entry (super admin only)' })
   async revert(@Param('id') id: string, @Req() req: any) {
     return this.audit.revert(id, req.user.id);

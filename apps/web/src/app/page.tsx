@@ -42,14 +42,14 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/30 px-6 h-14 flex items-center justify-between">
           <h1 className="text-lg font-bold gradient-text tracking-tight">Sohaara LMS</h1>
           <div className="flex items-center gap-4">
-            <Link href="/auth/login" className="text-sm font-medium text-secondary-text hover:text-primary-text transition-colors">
+            <Link href="/auth/start" className="text-sm font-medium text-secondary-text hover:text-primary-text transition-colors">
               Sign In
             </Link>
             <Button
               variant="primary"
               size="sm"
               className="rounded-xl"
-              onClick={() => router.push('/auth/register')}
+              onClick={() => router.push('/auth/start?returnTo=/dashboard')}
             >
               Get Started
               <ArrowRight size={14} />
@@ -74,11 +74,11 @@ export default function LandingPage() {
               analytics, and seamless learning experiences.
             </p>
             <div className="mt-10 flex items-center justify-center gap-4 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-              <Button variant="primary" size="lg" className="rounded-2xl shadow-xl shadow-accent-indigo/20" onClick={() => router.push('/auth/register')}>
+              <Button variant="primary" size="lg" className="rounded-2xl shadow-xl shadow-accent-indigo/20" onClick={() => router.push('/auth/start?returnTo=/dashboard')}>
                 Start Free Trial
                 <ArrowRight size={18} />
               </Button>
-              <Button variant="outline" size="lg" className="rounded-2xl" onClick={() => router.push('/auth/login')}>
+              <Button variant="outline" size="lg" className="rounded-2xl" onClick={() => router.push('/auth/start')}>
                 Sign In
               </Button>
             </div>
@@ -145,7 +145,7 @@ export default function LandingPage() {
                   Join thousands of organizations already using Sohaara LMS to power their learning programs.
                 </p>
                 <div className="mt-8 flex items-center justify-center gap-4">
-                  <Button variant="primary" size="lg" className="rounded-2xl shadow-xl shadow-accent-indigo/20" onClick={() => router.push('/auth/register')}>
+                  <Button variant="primary" size="lg" className="rounded-2xl shadow-xl shadow-accent-indigo/20" onClick={() => router.push('/auth/start?returnTo=/dashboard')}>
                     Get Started Free
                     <ArrowRight size={18} />
                   </Button>
