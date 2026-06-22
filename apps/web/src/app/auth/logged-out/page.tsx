@@ -16,6 +16,9 @@
 
 'use client';
 
+// Defensive: this page touches `localStorage`, keep it dynamic.
+export const dynamic = 'force-dynamic';
+
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@sohaara/ui';

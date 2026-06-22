@@ -8,11 +8,17 @@
 
 'use client';
 
+// Force the page to render dynamically — `oidc-client-ts` uses
+// `localStorage` and cannot be evaluated during Next.js static prerender.
+// Note: must come AFTER `'use client'` (Next.js requires that directive
+// to be the first statement of a client component file).
+export const dynamic = 'force-dynamic';
+
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@sohaara/ui';
 import { Shield, LogIn, UserPlus, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { getUserManager, AuthMode, OidcState } from '@/lib/oidc';
+import { getUserManager, AuthMode, OidcState, buildKeycloakResetCredentialsUrl, OIDC_REDIRECT_URI } from '@/lib/oidc';
 
 function StartPageInner() {
   const searchParams = useSearchParams();
@@ -28,8 +34,30 @@ function StartPageInner() {
     setLoading(mode);
     try {
       const state: OidcState = { mode, returnTo, inviteToken };
-      const extraQueryParams: Record<string, string> = { acr_values: mode };
-      await getUserManager().signinRedirect({ state, extraQueryParams });
+
+      // Reset mode navigates directly to Keycloak's themed reset form
+      // (skips the login → "Forgot password" → reset-form round-trip).
+      // The mode is stashed in sessionStorage keyed by the
+      // redirect_uri so /admin/auth/callback can route correctly when
+      // Keycloak posts the user back without any OIDC params. See
+      // apps/web/src/app/auth/start/page.tsx for the full rationale.
+      if (mode === 'reset') {
+        try {
+          sessionStorage.setItem(`auth_mode:${OIDC_REDIRECT_URI}`, 'reset');
+          if (returnTo) sessionStorage.setItem(`auth_returnTo:${OIDC_REDIRECT_URI}`, returnTo);
+        } catch {}
+        window.location.href = buildKeycloakResetCredentialsUrl(OIDC_REDIRECT_URI);
+        return;
+      }
+
+      // Login + register modes both go through the OIDC auth URL. The
+      // sohaara theme renders a "Register" link inline so register is
+      // reachable in one extra click. Keycloak's `acr_values_supported`
+      // is `["0","1"]` so the `acr_values=register` hint is silently
+      // ignored — no point sending it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const um = (await getUserManager()) as any;
+      await um.signinRedirect({ state });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start authentication');
       setLoading(null);

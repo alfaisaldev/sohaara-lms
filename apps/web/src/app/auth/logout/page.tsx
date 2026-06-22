@@ -15,6 +15,12 @@
 
 'use client';
 
+// Force the page to render dynamically — `oidc-client-ts` uses
+// `localStorage` and cannot be evaluated during Next.js static prerender.
+// Note: must come AFTER `'use client'` (Next.js requires that directive
+// to be the first statement of a client component file).
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@sohaara/ui';
@@ -29,7 +35,9 @@ export default function LogoutPage() {
     let cancelled = false;
     (async () => {
       try {
-        const user = await getUserManager().getUser();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const um = (await getUserManager()) as any;
+        const user = await um.getUser();
         // If there's no Keycloak session at all (already signed out, or
         // session cookie expired), skip Keycloak and head straight to
         // the post-logout landing.
@@ -38,7 +46,7 @@ export default function LogoutPage() {
           return;
         }
         const state: OidcState = { mode: 'login', returnTo: '/' };
-        await getUserManager().signoutRedirect({
+        await um.signoutRedirect({
           state,
           // Tell Keycloak to bounce back here after the end-session
           // round-trip completes.

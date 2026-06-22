@@ -6,6 +6,12 @@
 
 'use client';
 
+// Force the page to render dynamically — `oidc-client-ts` uses
+// `localStorage` and cannot be evaluated during Next.js static prerender.
+// Note: must come AFTER `'use client'` (Next.js requires that directive
+// to be the first statement of a client component file).
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@sohaara/ui';
@@ -20,13 +26,15 @@ export default function LogoutPage() {
     let cancelled = false;
     (async () => {
       try {
-        const user = await getUserManager().getUser();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const um = (await getUserManager()) as any;
+        const user = await um.getUser();
         if (!user) {
           window.location.href = '/admin/auth/logged-out';
           return;
         }
         const state: OidcState = { mode: 'login', returnTo: '/admin/auth/start' };
-        await getUserManager().signoutRedirect({
+        await um.signoutRedirect({
           state,
           post_logout_redirect_uri: `${window.location.origin}/admin/auth/logged-out`,
         });

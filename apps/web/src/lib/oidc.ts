@@ -27,7 +27,13 @@
  *   NEXT_PUBLIC_APP_URL             e.g. http://localhost:3000
  */
 
-import { UserManager, WebStorageStateStore, UserManagerSettings } from 'oidc-client-ts';
+import { WebStorageStateStore, UserManagerSettings } from 'oidc-client-ts';
+// NOTE: `UserManager` is NOT imported at module top level — it pulls in
+// `localStorage` access at module-init time, which crashes Next.js SSR
+// static prerender. We dynamic-import it inside `getUserManager()` so
+// the whole `oidc-client-ts` module only evaluates in the browser.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UserManagerCtor = new (...args: any[]) => any;
 
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
 const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'sohaara';
@@ -53,6 +59,35 @@ export interface OidcState {
   inviteToken?: string;
 }
 
+/**
+ * Direct Keycloak endpoints that bypass the OIDC auth URL. Used by
+ * /auth/start when `mode='reset'` so the user lands straight on the
+ * themed reset-password form (skipping the extra login-page → click
+ * "Forgot password" → reset-form round-trip). Keycloak's
+ * `login-actions/reset-credentials` endpoint accepts the same
+ * `client_id` and `redirect_uri` query params as the OIDC auth
+ * endpoint and works without PKCE — once the user resets their
+ * password Keycloak redirects them back to `redirect_uri` and
+ * /auth/callback reads `state.mode='reset'` from the OIDC state
+ * (kept in localStorage by oidc-client-ts before the redirect).
+ */
+export function buildKeycloakResetCredentialsUrl(redirectUri: string): string {
+  const base = `${OIDC_AUTHORITY.replace(/\/+$/, '')}/login-actions/reset-credentials`;
+  const params = new URLSearchParams({
+    client_id: OIDC_CLIENT_ID,
+    redirect_uri: redirectUri,
+  });
+  return `${base}?${params.toString()}`;
+}
+
+/**
+ * Register flow uses the OIDC auth URL (no separate register endpoint
+ * path that accepts PKCE) — the sohaara theme renders a "Register" link
+ * inline on the themed login page so the user only adds one extra
+ * click. Keycloak's `acr_values_supported: ["0","1"]` confirms it does
+ * NOT honor `acr_values=register`, so we don't try to send it.
+ */
+
 const settings: UserManagerSettings = {
   authority: OIDC_AUTHORITY,
   client_id: OIDC_CLIENT_ID,
@@ -72,16 +107,27 @@ const settings: UserManagerSettings = {
   automaticSilentRenew: true,
   // localStorage so refresh-token persistence survives across tabs
   // (and so the silent-renew iframe on Keycloak can find the user).
-  userStore: new WebStorageStateStore({ store: typeof window !== 'undefined' ? window.localStorage : undefined }),
+  userStore: typeof window !== 'undefined'
+    ? new WebStorageStateStore({ store: window.localStorage })
+    : undefined,
 };
 
-let _userManager: UserManager | null = null;
+let _userManager: unknown = null;
 
 /**
  * Returns the singleton UserManager for the LMS web app. Created lazily
- * so SSR doesn't try to touch window.localStorage during build.
+ * (and on the client only) so SSR doesn't try to touch window.localStorage
+ * during build. Calling this on the server throws — auth pages are
+ * marked `export const dynamic = 'force-dynamic'` to ensure they never
+ * get statically prerendered.
  */
-export function getUserManager(): UserManager {
-  if (!_userManager) _userManager = new UserManager(settings);
+export async function getUserManager(): Promise<unknown> {
+  if (typeof window === 'undefined') {
+    throw new Error('getUserManager() called on the server — should only run in the browser');
+  }
+  if (_userManager) return _userManager;
+  const mod = await import('oidc-client-ts');
+  const UserManager = mod.UserManager as UserManagerCtor;
+  _userManager = new UserManager(settings);
   return _userManager;
 }

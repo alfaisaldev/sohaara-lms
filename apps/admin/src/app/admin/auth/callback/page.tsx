@@ -10,7 +10,13 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+// Force the page to render dynamically — `oidc-client-ts` uses
+// `localStorage` and cannot be evaluated during Next.js static prerender.
+// Note: must come AFTER `'use client'` (Next.js requires that directive
+// to be the first statement of a client component file).
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@sohaara/ui';
 import { AlertCircle } from 'lucide-react';
@@ -24,7 +30,7 @@ function readStateMode(value: unknown): AuthMode {
   return 'login';
 }
 
-export default function CallbackPage() {
+function CallbackPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState('');
@@ -40,7 +46,23 @@ export default function CallbackPage() {
 
     (async () => {
       try {
-        const user = await getUserManager().signinCallback();
+        // Reset-mode bypass: /admin/auth/start navigates directly to
+        // Keycloak's /login-actions/reset-credentials for reset, so
+        // there's no OIDC state in localStorage for signinCallback()
+        // to consume. The mode was stashed in sessionStorage by
+        // /admin/auth/start — short-circuit here and route.
+        const resetRedirectKey = `auth_mode:${window.location.origin}/admin/auth/callback`;
+        const stashedMode = sessionStorage.getItem(resetRedirectKey);
+        if (stashedMode === 'reset') {
+          sessionStorage.removeItem(resetRedirectKey);
+          sessionStorage.removeItem(`auth_returnTo:${window.location.origin}/admin/auth/callback`);
+          router.replace('/admin/auth/start?reset=done');
+          return;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const um = (await getUserManager()) as any;
+        const user = await um.signinCallback();
         if (cancelled || !user) return;
 
         const mode = readStateMode((user.state as any)?.mode);
@@ -106,5 +128,22 @@ export default function CallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Wrap in Suspense so the page shell can prerender while
+// useSearchParams is gated to the client (required since Next 14).
+export default function CallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-primary-bg px-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-accent-indigo border-t-transparent animate-spin" />
+          <p className="text-sm text-secondary-text">Loading...</p>
+        </div>
+      </div>
+    }>
+      <CallbackPageInner />
+    </Suspense>
   );
 }

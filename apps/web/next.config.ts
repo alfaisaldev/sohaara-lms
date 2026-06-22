@@ -12,8 +12,17 @@ import type { NextConfig } from 'next';
 // Inside the compose network the api container is reachable as `api`
 // (service name) on port 4000; we never want the browser to attempt that
 // directly, so we keep it server-only.
+//
+// `NEXT_PUBLIC_KEYCLOAK_URL` is the *browser*-reachable Keycloak origin
+// (e.g. `http://localhost:8080` through the host port-forward). The OIDC
+// client (`oidc-client-ts` in `lib/oidc.ts`) hits it for the discovery
+// doc, the authorization redirect, the token exchange, the silent-renew
+// iframe, and the end-session redirect — so the CSP MUST allow it in
+// `connect-src`, `frame-src` (silent renew + post-logout), and `img-src`
+// (themed login pages reference logo images from the realm).
 const BROWSER_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const INTERNAL_API_URL = process.env.API_INTERNAL_URL || 'http://api:4000';
+const BROWSER_KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@sohaara/ui', '@sohaara/shared', '@sohaara/types'],
@@ -54,7 +63,18 @@ const nextConfig: NextConfig = {
             // `/api/scorm-content/<key>/...` route. With 'none' the SCORM
             // package would be blocked from loading even though both pages
             // are same-origin.
-            value: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: ${BROWSER_API_URL}; media-src 'self' blob: ${BROWSER_API_URL}; frame-src 'self' ${BROWSER_API_URL}; font-src 'self' data:; connect-src 'self' ${BROWSER_API_URL} ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' http://localhost:3000 http://localhost:3001`,
+            //
+            // `connect-src` must include the Keycloak origin (`oidc-client-ts`
+            // fetches the discovery doc and posts to the token endpoint
+            // from the browser), and `frame-src` must include it too
+            // (the silent-renew iframe + the themed login pages render
+            // inside frames during the OIDC round-trip). Without the
+            // Keycloak origin in `connect-src`, `signinRedirect()` throws
+            // "Failed to fetch" the moment the user clicks Sign in — the
+            // browser blocks the `.well-known/openid-configuration` GET
+            // and `oidc-client-ts` surfaces the network failure to the
+            // page.
+            value: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: ${BROWSER_API_URL} ${BROWSER_KEYCLOAK_URL}; media-src 'self' blob: ${BROWSER_API_URL}; frame-src 'self' ${BROWSER_API_URL} ${BROWSER_KEYCLOAK_URL}; font-src 'self' data:; connect-src 'self' ${BROWSER_API_URL} ${BROWSER_KEYCLOAK_URL} ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self' ${BROWSER_KEYCLOAK_URL}; frame-ancestors 'self' http://localhost:3000 http://localhost:3001`,
           },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

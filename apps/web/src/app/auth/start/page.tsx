@@ -1,30 +1,35 @@
 /**
  * /auth/start — the ONLY auth entry point in the LMS web app.
  *
- * Single page with three CTAs. Each one goes through the same OIDC
- * Authorization Code + PKCE pipe — the only thing that varies is the
- * `state.mode` field, which the universal /auth/callback uses to route
- * post-auth.
+ * Single page with three CTAs:
+ *   Sign in             → mode='login'    → OIDC auth URL (themed login)
+ *   Create your account → mode='register' → OIDC auth URL (theme shows Register link inline)
+ *   Reset your password → mode='reset'    → /login-actions/reset-credentials directly
  *
- * `oidc-client-ts` builds the authorization URL from the configured
- * `authority` (so we never hardcode Keycloak's
- * `/protocol/openid-connect/auth` path). The `extraQueryParams.acr_values`
- * hint tells Keycloak's themed login/register/reset page which form to
- * render inline.
- *
- *   Sign in             → mode='login',    acr_values='login'
- *   Create your account → mode='register', acr_values='register'
- *   Reset your password → mode='reset',    acr_values='reset'
+ * `state.mode` is the ONLY discriminator — read by the universal
+ * /auth/callback to route post-auth. Reset mode bypasses the OIDC
+ * auth URL because Keycloak's `login-actions/reset-credentials`
+ * endpoint renders the themed reset form in one click instead of
+ * forcing the user to log in, click "Forgot password", then reset.
+ * (Keycloak's discovery doc lists `acr_values_supported: ["0","1"]`
+ * so the `acr_values=mode` hint is silently ignored — no point
+ * sending it.)
  */
 
 'use client';
+
+// Force the page to render dynamically — `oidc-client-ts` uses
+// `localStorage` and cannot be evaluated during Next.js static prerender.
+// Note: must come AFTER `'use client'` (Next.js requires that directive
+// to be the first statement of a client component file).
+export const dynamic = 'force-dynamic';
 
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@sohaara/ui';
 import { GraduationCap, LogIn, UserPlus, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { getUserManager, AuthMode, OidcState } from '@/lib/oidc';
+import { getUserManager, AuthMode, OidcState, buildKeycloakResetCredentialsUrl, OIDC_REDIRECT_URI } from '@/lib/oidc';
 
 function StartPageInner() {
   const searchParams = useSearchParams();
@@ -40,11 +45,36 @@ function StartPageInner() {
     setLoading(mode);
     try {
       const state: OidcState = { mode, returnTo, inviteToken };
-      const extraQueryParams: Record<string, string> = { acr_values: mode };
-      await getUserManager().signinRedirect({
-        state,
-        extraQueryParams,
-      });
+
+      // Reset mode bypasses the OIDC auth URL — we navigate directly to
+      // Keycloak's themed reset-password endpoint so the user lands on
+      // the reset form in one click instead of three (login → click
+      // "Forgot password" → reset form). Keycloak's
+      // `login-actions/reset-credentials` doesn't require PKCE and
+      // redirects back to `redirect_uri` once the user submits a new
+      // password. There's no OIDC state to persist (oidc-client-ts
+      // never built a signin request), so we stash the mode in
+      // sessionStorage keyed by the redirect_uri so /auth/callback can
+      // pick it up after the round-trip and skip the
+      // signinCallback() / token-exchange dance.
+      if (mode === 'reset') {
+        try {
+          sessionStorage.setItem(`auth_mode:${OIDC_REDIRECT_URI}`, 'reset');
+          if (returnTo) sessionStorage.setItem(`auth_returnTo:${OIDC_REDIRECT_URI}`, returnTo);
+        } catch {}
+        window.location.href = buildKeycloakResetCredentialsUrl(OIDC_REDIRECT_URI);
+        return;
+      }
+
+      // Login + register modes both go through the OIDC auth URL.
+      // The sohaara theme renders a "Register" link inline on the
+      // themed login page so register is reachable in one extra click
+      // (no `acr_values=register` hint — Keycloak's discovery doc says
+      // `acr_values_supported: ["0","1"]`, the hint would be silently
+      // ignored).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const um = (await getUserManager()) as any;
+      await um.signinRedirect({ state });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start authentication');
       setLoading(null);

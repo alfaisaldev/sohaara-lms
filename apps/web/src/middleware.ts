@@ -9,8 +9,20 @@ import { NextRequest, NextResponse } from 'next/server';
 // `API_INTERNAL_URL` env var (see next.config.ts) so Next.js can target
 // the api by its docker service name without leaking that hostname into
 // CSP.
+//
+// `NEXT_PUBLIC_KEYCLOAK_URL` is the browser-reachable Keycloak origin
+// (e.g. `http://localhost:8080`). The OIDC client (`oidc-client-ts` in
+// `lib/oidc.ts`) hits it for the discovery doc, the authorization
+// redirect, the token exchange, the silent-renew iframe, and the
+// end-session redirect. This middleware overrides the CSP set by
+// `next.config.ts`, so it MUST also allow the Keycloak origin in
+// `connect-src` / `frame-src` / `img-src` / `form-action` or
+// `signinRedirect()` throws "Failed to fetch" the moment the user
+// clicks a button on /auth/start.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const API_ORIGIN = new URL(API_URL).origin;
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
+const KEYCLOAK_ORIGIN = new URL(KEYCLOAK_URL).origin;
 
 // No nonce in script-src: Next.js 16 emits inline <script> tags for the RSC
 // payload that this middleware cannot tag with the per-request nonce. The
@@ -23,19 +35,33 @@ function buildCsp(): string {
     `default-src 'self'`,
     `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' blob: data: ${API_ORIGIN}`,
+    // `img-src` must include the Keycloak origin so themed login pages can
+    // render their logo images. `${KEYCLOAK_ORIGIN}` is the same origin the
+    // OIDC client hits for discovery/auth/token; without it, themed Keycloak
+    // pages render with broken images.
+    `img-src 'self' blob: data: ${API_ORIGIN} ${KEYCLOAK_ORIGIN}`,
     // `media-src` allows <video>/<audio> elements to stream uploaded assets
     // proxied through the api (`${API_ORIGIN}/uploads/<key>`). `frame-src`
-    // allows the SCORM player iframe to embed the launch URL. Both default
-    // to `default-src 'self'` if missing, which blocks playback of any
-    // uploaded video/audio and iframe embeds.
+    // allows the SCORM player iframe to embed the launch URL and also the
+    // silent-renew iframe + themed login frame served by Keycloak. Both
+    // default to `default-src 'self'` if missing, which blocks playback of
+    // any uploaded video/audio and iframe embeds.
     `media-src 'self' blob: ${API_ORIGIN}`,
-    `frame-src 'self' ${API_ORIGIN}`,
+    `frame-src 'self' ${API_ORIGIN} ${KEYCLOAK_ORIGIN}`,
     `font-src 'self' data:`,
-    `connect-src 'self' ${API_ORIGIN} ws: wss:`,
+    // `connect-src` must include the Keycloak origin — `oidc-client-ts`
+    // fetches the discovery doc and posts to the token endpoint from the
+    // browser. Without this entry the browser blocks
+    // `.well-known/openid-configuration` and `signinRedirect()` surfaces
+    // "Failed to fetch" on /auth/start.
+    `connect-src 'self' ${API_ORIGIN} ${KEYCLOAK_ORIGIN} ws: wss:`,
     `object-src 'none'`,
     `base-uri 'self'`,
-    `form-action 'self'`,
+    // `form-action` must include the Keycloak origin — the themed login
+    // page's <form> POSTs the username/password straight to Keycloak's
+    // login-action endpoint, and `default-src 'self'` would block that
+    // POST.
+    `form-action 'self' ${KEYCLOAK_ORIGIN}`,
     // `frame-ancestors 'self' http://localhost:3000 http://localhost:3001`
     // allows the lesson player page (localhost:3000) to embed the SCORM
     // iframe whose launch URL is also same-origin

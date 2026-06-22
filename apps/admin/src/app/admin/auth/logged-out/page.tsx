@@ -5,6 +5,10 @@
 
 'use client';
 
+// Defensive: keep this page dynamic in case future code on it
+// touches `localStorage` (the admin's clearAuth helper does).
+export const dynamic = 'force-dynamic';
+
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@sohaara/ui';
