@@ -116,14 +116,15 @@ export class AuthController {
   /**
    * @deprecated Use the "Reset your password" button on `/auth/start`,
    * which delegates to Keycloak's themed reset-credentials page.
-   * This stub returns 410 Gone.
+   * This stub returns 410 Gone. NO `@UseGuards(JwtAuthGuard)` here on
+   * purpose: the 410 must be reachable by unauthenticated callers too,
+   * otherwise the JwtAuthGuard returns 401 first and the Model A+ "go
+   * to /auth/start" signal is lost on the wire.
    */
   @Post('change-password')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: '[DEPRECATED] Legacy password change — returns 410 Gone' })
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async changePassword(@Req() req: any, @Body() _body: { currentPassword: string; newPassword: string }) {
+  async changePassword(@Body() _body: { currentPassword: string; newPassword: string }) {
     gone('/auth/start?mode=reset');
   }
 

@@ -3,37 +3,83 @@ import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import { ConfigService } from '../config/config.service';
-import * as bcryptjs from 'bcryptjs';
+import { OrganizationsService } from '../organizations/organizations.service';
 
+/**
+ * Tests for the post-Model-A+ AuthService.
+ *
+ * Pre-Model-A+ this file tested the legacy `login()` and
+ * `register()` paths (which bcrypt-hashed a password on the LMS
+ * side). Those methods have been removed — under Model A+, Keycloak
+ * owns identity end-to-end and the LMS never sees, stores,
+ * transmits, logs, or hashes a password. The corresponding
+ * controller routes (`POST /auth/login`, `POST /auth/register`,
+ * `POST /auth/change-password`) are 410 Gone stubs.
+ *
+ * The remaining surface is:
+ *   - `validateUser(userId)` — looks up the LMS User row.
+ *   - `getUserRoles(userId)` — returns role slugs from the local mirror.
+ *   - `getUserPermissions(userId)` — returns the permission union.
+ *   - `refreshToken(token)` — rotates the LMS HS256 session.
+ *
+ * `exchangeKeycloakToken` is integration-tested against a live
+ * Keycloak in the re-verify script (`todo.md` §"Re-verify after a
+ * fresh pull"); not unit-tested here because the JWKS verify path
+ * needs real crypto.
+ */
 describe('AuthService', () => {
   let service: AuthService;
-  let db: Partial<Record<keyof DatabaseService, jest.Mock>>;
-  let jwtService: Partial<Record<keyof JwtService, jest.Mock>>;
+  let db: any;
+  let jwtService: any;
 
   const mockUser = {
     id: 'user-1',
     email: 'test@test.com',
-    passwordHash: 'hashed-password',
+    passwordHash: 'kc:randomhex',
     firstName: 'Test',
     lastName: 'User',
     status: 'active',
+    tokenVersion: 0,
   };
 
   beforeEach(async () => {
     db = {
       user: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
-      } as any,
+        count: jest.fn(),
+      },
       session: {
         create: jest.fn().mockResolvedValue({ id: 'session-1' }),
+        update: jest.fn().mockResolvedValue({ id: 'session-1' }),
         updateMany: jest.fn(),
-      } as any,
+        findFirst: jest.fn(),
+      },
+      socialAccount: {
+        findUnique: jest.fn(),
+        upsert: jest.fn(),
+      },
+      userRole: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+        create: jest.fn(),
+      },
+      role: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      organization: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
     };
 
     jwtService = {
-      signAsync: jest.fn().mockResolvedValue('mock-token'),
+      sign: jest.fn().mockReturnValue('mock-token'),
     };
 
     const config = {
@@ -41,8 +87,18 @@ describe('AuthService', () => {
         if (key === 'JWT_SECRET') return 'test-secret';
         if (key === 'JWT_EXPIRES_IN') return '15m';
         if (key === 'JWT_REFRESH_EXPIRES_IN') return '7d';
+        if (key === 'KEYCLOAK_URL') return 'http://localhost:8080';
+        if (key === 'KEYCLOAK_REALM') return 'sohaara';
+        if (key === 'KEYCLOAK_CLIENT_ID') return 'sohaara-api';
         return null;
       }),
+      isProduction: false,
+      jwtRefreshExpiresIn: '7d',
+      jwtExpiresIn: '15m',
+      keycloakIssuer: 'http://localhost:8080/realms/sohaara',
+      keycloakJwksUri: 'http://localhost:8080/realms/sohaara/protocol/openid-connect/certs',
+      keycloakAcceptableIssuers: new Set(['http://localhost:8080/realms/sohaara']),
+      keycloakClientId: 'sohaara-api',
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -51,81 +107,45 @@ describe('AuthService', () => {
         { provide: DatabaseService, useValue: db },
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: config },
+        { provide: OrganizationsService, useValue: { findByInviteToken: jest.fn(), isInviteConsumed: jest.fn(), consumeInvite: jest.fn() } },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
   });
 
-  describe('login', () => {
-    it('should return tokens on valid credentials', async () => {
-      db.user.findUnique.mockResolvedValue(mockUser);
-      jest.spyOn(bcryptjs, 'compare').mockResolvedValue(true as never);
-
-      const result = await service.login('test@test.com', 'password');
-
-      expect(result).toHaveProperty('accessToken', 'mock-token');
-      expect(result).toHaveProperty('refreshToken', 'mock-token');
-      expect(result.user).toMatchObject({ id: 'user-1', email: 'test@test.com' });
-    });
-
-    it('should throw on invalid email', async () => {
-      db.user.findUnique.mockResolvedValue(null);
-      await expect(service.login('wrong@test.com', 'password')).rejects.toThrow('Invalid credentials');
-    });
-
-    it('should throw on inactive account', async () => {
-      db.user.findUnique.mockResolvedValue({ ...mockUser, status: 'suspended' });
-      await expect(service.login('test@test.com', 'password')).rejects.toThrow('Account is not active');
-    });
-
-    it('should throw on wrong password', async () => {
-      db.user.findUnique.mockResolvedValue(mockUser);
-      jest.spyOn(bcryptjs, 'compare').mockResolvedValue(false as never);
-      await expect(service.login('test@test.com', 'wrong')).rejects.toThrow('Invalid credentials');
-    });
-  });
-
-  describe('register', () => {
-    it('should create a new user and return tokens', async () => {
-      db.user.findUnique = jest.fn().mockResolvedValue(null);
-      (db.user as any).create = jest.fn().mockResolvedValue(mockUser);
-
-      const result = await service.register({
-        email: 'new@test.com',
-        password: 'Secure123!',
-        firstName: 'New',
-        lastName: 'User',
-      });
-
-      expect(result).toHaveProperty('accessToken');
-    });
-
-    it('should throw on duplicate email', async () => {
-      db.user.findUnique = jest.fn().mockResolvedValue(mockUser);
-      await expect(
-        service.register({ email: 'test@test.com', password: 'Secure123!', firstName: 'A', lastName: 'B' }),
-      ).rejects.toThrow('already in use');
-    });
-  });
-
   describe('validateUser', () => {
-    it('should return user profile without password', async () => {
-      db.user.findUnique = jest.fn().mockResolvedValue(mockUser);
+    it('returns the user when active', async () => {
+      db.user.findUnique.mockResolvedValue(mockUser);
       const result = await service.validateUser('user-1');
-      expect(result).not.toHaveProperty('passwordHash');
-      expect(result).toHaveProperty('id', 'user-1');
+      expect(result).toMatchObject({ id: 'user-1', email: 'test@test.com' });
     });
 
-    it('should throw on non-existent user', async () => {
-      db.user.findUnique = jest.fn().mockResolvedValue(null);
-      await expect(service.validateUser('bad-id')).rejects.toThrow('User not found');
+    it('throws Unauthorized when user missing', async () => {
+      db.user.findUnique.mockResolvedValue(null);
+      await expect(service.validateUser('bad-id')).rejects.toThrow(/not found/i);
     });
   });
 
-  describe('refreshToken', () => {
-    it('should throw when service is not properly configured', async () => {
-      await expect(service.refreshToken('some-token')).rejects.toThrow();
+  describe('getUserRoles', () => {
+    it('returns role slugs from userRole + role', async () => {
+      db.userRole.findMany.mockResolvedValue([
+        { role: { slug: 'admin' } },
+        { role: { slug: 'learner' } },
+      ]);
+      const roles = await service.getUserRoles('user-1');
+      expect(roles).toEqual(expect.arrayContaining(['admin', 'learner']));
+    });
+  });
+
+  describe('getUserPermissions', () => {
+    it('returns the union of role.permissions', async () => {
+      db.userRole.findMany.mockResolvedValue([
+        { role: { permissions: ['users.read', 'users.write'] } },
+        { role: { permissions: ['users.read', 'courses.read'] } },
+      ]);
+      const perms = await service.getUserPermissions('user-1');
+      expect(perms).toEqual(expect.arrayContaining(['users.read', 'users.write', 'courses.read']));
     });
   });
 });

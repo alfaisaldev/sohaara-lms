@@ -1,13 +1,42 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcryptjs from 'bcryptjs';
 import * as crypto from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { ConfigService } from '../config/config.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+/**
+ * Auth service for the Sohaara LMS.
+ *
+ * Under Model A+, Keycloak owns identity end-to-end — passwords,
+ * signup, login, MFA, password reset, account lifecycle. The LMS
+ * never sees, stores, transmits, logs, or hashes a password.
+ *
+ * What this service does:
+ *   - `exchangeKeycloakToken` — verify a Keycloak-issued access_token
+ *     (RS256 via realm JWKS), auto-provision the local User +
+ *     SocialAccount link, diff-sync Keycloak realm roles into the
+ *     local `user_roles` mirror, mint an LMS HS256 session.
+ *   - `refreshToken`, `logout`, `logoutAllSessions`, `validateUser`,
+ *     `getUserRoles`, `getUserPermissions` — operate on the LMS's
+ *     local HS256 session (which is what the browser stores after
+ *     `/auth/callback`).
+ *
+ * What this service does NOT do (and intentionally never will):
+ *   - accept a username/email + password pair;
+ *   - hash, compare, or store a password;
+ *   - implement an account-lockout counter against failed password
+ *     guesses (Keycloak's brute-force protection handles that);
+ *   - sign up a new user via an LMS-side form (signup is the themed
+ *     Keycloak registration page).
+ *
+ * Previously this file had `login()`, `register()`, `changePassword()`
+ * + a `bcryptjs.compare/hash` import + `recordFailedAttempt()` /
+ * `MAX_LOGIN_ATTEMPTS` / `LOCKOUT_DURATION_MS` constants. All of that
+ * has been removed — the corresponding controller routes (`POST
+ * /auth/login`, `POST /auth/register`, `POST /auth/change-password`)
+ * are now 410 Gone stubs that redirect callers to `/auth/start`.
+ */
 
 @Injectable()
 export class AuthService {
@@ -19,59 +48,6 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly orgsService: OrganizationsService,
   ) {}
-
-  async login(email: string, password: string, rememberMe = false) {
-    const user = await this.db.user.findUnique({ where: { email } });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
-
-    if (this.config.isProduction && user.lockedUntil && user.lockedUntil > new Date()) {
-      const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000 / 60);
-      throw new UnauthorizedException(`Account locked. Try again in ${remaining} minute(s)`);
-    }
-
-    if (user.status !== 'active') throw new UnauthorizedException('Account is not active');
-
-    const isValid = await bcryptjs.compare(password, user.passwordHash);
-    if (!isValid) {
-      await this.recordFailedAttempt(user.id);
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    await this.db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
-    });
-
-    const tokens = await this.generateTokens(user.id, rememberMe);
-
-    const permissions = await this.getUserPermissions(user.id);
-    const roles = await this.getUserRoles(user.id);
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        avatar: user.avatar,
-        organizationId: user.organizationId,
-      },
-      permissions,
-      roles,
-      ...tokens,
-    };
-  }
-
-  private async recordFailedAttempt(userId: string) {
-    const user = await this.db.user.findUnique({ where: { id: userId } });
-    if (!user) return;
-    const attempts = (user.failedLoginAttempts || 0) + 1;
-    const update: any = { failedLoginAttempts: attempts };
-    if (attempts >= MAX_LOGIN_ATTEMPTS) {
-      update.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
-    }
-    await this.db.user.update({ where: { id: userId }, data: update });
-  }
 
   /**
    * Exchange a Keycloak access_token (obtained client-side via the
@@ -461,66 +437,9 @@ export class AuthService {
     }
   }
 
-  async register(data: {
-    email: string;
-    password: string;
-    firstName: string;
-    lastName: string;
-    organizationName?: string;
-    organizationId?: string;
-  }) {
-    const existing = await this.db.user.findUnique({ where: { email: data.email } });
-    if (existing) throw new ConflictException('Email already registered');
-
-    const passwordHash = await bcryptjs.hash(data.password, 12);
-
-    let organizationId: string | undefined;
-
-    if (data.organizationId) {
-      const org = await this.db.organization.findUnique({ where: { id: data.organizationId } });
-      if (org) organizationId = org.id;
-    } else if (data.organizationName) {
-      const org = await this.db.organization.create({
-        data: {
-          name: data.organizationName,
-          slug: data.organizationName.toLowerCase().replace(/\s+/g, '-'),
-        },
-      });
-      organizationId = org.id;
-    }
-
-    const user = await this.db.user.create({
-      data: {
-        email: data.email,
-        passwordHash,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        organizationId,
-        emailVerified: false,
-      },
-    });
-
-    const learnerRole = await this.db.role.findFirst({
-      where: { slug: 'learner', organizationId: null },
-    });
-
-    if (learnerRole) {
-      await this.db.userRole.create({
-        data: {
-          userId: user.id,
-          roleId: learnerRole.id,
-          assignedBy: user.id,
-        },
-      });
-    }
-
-    return {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-    };
-  }
+  // NOTE: legacy `register()` removed. Under Model A+, signup happens
+  // on Keycloak's themed registration page; the LMS never hashes a
+  // password. The `POST /auth/register` route is a 410 Gone stub.
 
   async refreshToken(refreshToken: string) {
     const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -568,21 +487,11 @@ export class AuthService {
     return user;
   }
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const user = await this.db.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-
-    const isValid = await bcryptjs.compare(currentPassword, user.passwordHash);
-    if (!isValid) throw new UnauthorizedException('Current password is incorrect');
-
-    const passwordHash = await bcryptjs.hash(newPassword, 12);
-    await this.db.user.update({
-      where: { id: userId },
-      data: { passwordHash },
-    });
-
-    return { message: 'Password changed successfully' };
-  }
+  // NOTE: legacy `changePassword()` removed. Under Model A+, the LMS
+  // never sees, compares, or hashes a password. Password changes go
+  // through the "Reset your password" button on `/auth/start`, which
+  // delegates to Keycloak's themed reset page. The `POST
+  // /auth/change-password` route is a 410 Gone stub.
 
   private async generateTokens(userId: string, rememberMe = false) {
     const accessExpiresIn = rememberMe ? this.config.jwtRefreshExpiresIn : this.config.jwtExpiresIn;

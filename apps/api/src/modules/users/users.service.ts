@@ -1,6 +1,20 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
+/**
+ * LMS-side User-row service.
+ *
+ * Under Model A+ the LMS NEVER creates users with a local password.
+ * User creation goes through `AdminController` → `AdminService` →
+ * `KeycloakAdminService`, which provisions the Keycloak user first,
+ * then mirrors a `User` row with a random `kc:<hex>` `passwordHash`
+ * (a sentinel value that satisfies the schema's NOT NULL but can
+ * never authenticate via the legacy `POST /api/v1/auth/login` 410
+ * stub).
+ *
+ * `bcryptjs` is therefore no longer needed in this service — every
+ * password-bearing path has been removed.
+ */
 @Injectable()
 export class UsersService {
   constructor(private readonly db: DatabaseService) {}
@@ -101,57 +115,12 @@ export class UsersService {
     return user;
   }
 
-  async create(data: { firstName: string; lastName: string; email: string; password?: string; isActive?: boolean }) {
-    const { firstName, lastName, email, password, isActive } = data;
-    const existing = await this.db.user.findUnique({ where: { email } });
-    if (existing && !existing.deletedAt) throw new ConflictException('Email already in use');
-
-    if (existing?.deletedAt) {
-      const bcrypt = await import('bcryptjs');
-      const passwordHash = password ? await bcrypt.hash(password, 12) : await bcrypt.hash('Welcome1!', 12);
-      return this.db.user.update({
-        where: { id: existing.id },
-        data: {
-          firstName,
-          lastName,
-          passwordHash,
-          status: isActive !== false ? 'active' : 'inactive',
-          deletedAt: null,
-          emailVerified: true,
-        },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          status: true,
-          createdAt: true,
-        },
-      });
-    }
-
-    const bcrypt = await import('bcryptjs');
-    const passwordHash = password ? await bcrypt.hash(password, 12) : await bcrypt.hash('Welcome1!', 12);
-
-    return this.db.user.create({
-      data: {
-        firstName,
-        lastName,
-        email,
-        passwordHash,
-        status: isActive !== false ? 'active' : 'inactive',
-        emailVerified: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-  }
+  // NOTE: `create()` was removed. Under Model A+, users are created in
+  // Keycloak first via `AdminController.createUser()` →
+  // `AdminService.createUser()` → `KeycloakAdminService.createUser()`.
+  // The legacy LMS-side create used to bcrypt-hash a password here,
+  // which violated "LMS never sees, stores, transmits, logs, or hashes
+  // a password". `POST /api/v1/users` now returns 410 Gone.
 
   async update(id: string, data: {
     firstName?: string;
@@ -241,30 +210,12 @@ export class UsersService {
     });
   }
 
-  async getRoles(userId: string) {
-    return this.db.userRole.findMany({
-      where: { userId },
-      include: { role: true },
-    });
-  }
-
-  async assignRole(userId: string, roleId: string, assignedBy: string) {
-    const existing = await this.db.userRole.findUnique({
-      where: { userId_roleId: { userId, roleId } },
-    });
-
-    if (existing) throw new ConflictException('Role already assigned');
-
-    return this.db.userRole.create({
-      data: { userId, roleId, assignedBy },
-      include: { role: true },
-    });
-  }
-
-  async removeRole(userId: string, roleId: string) {
-    await this.db.userRole.delete({
-      where: { userId_roleId: { userId, roleId } },
-    });
-    return { message: 'Role removed successfully' };
-  }
+  // NOTE: `getRoles()`, `assignRole()`, `removeRole()` were removed.
+  // Realm roles live in Keycloak (Model A+). Use:
+  //   GET    /api/v1/admin/users         — list (now includes roles[])
+  //   POST   /api/v1/admin/users/:id/roles   body={roles:['admin','learner']}
+  // to read / write roles. The local `user_roles` table is no longer
+  // the source of truth and is only kept as a denormalized mirror
+  // populated by `AuthService.exchangeKeycloakToken` for the legacy
+  // local HS256 fallback path.
 }

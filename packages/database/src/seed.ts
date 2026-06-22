@@ -1,7 +1,18 @@
 import { PrismaClient } from '@prisma/client';
-import * as bcryptjs from 'bcryptjs';
+import * as crypto from 'crypto';
 
 const prisma = new PrismaClient();
+
+/**
+ * Sentinel value written into `User.passwordHash` for users whose
+ * identity lives in Keycloak (Model A+). The `kc:` prefix marks the
+ * row as a Keycloak-mirrored user; the random hex is unguessable and
+ * exists ONLY to satisfy the schema's NOT NULL constraint. The
+ * `POST /auth/login` 410 Gone stub never compares against this value.
+ */
+function kcSentinelHash(): string {
+  return `kc:${crypto.randomBytes(48).toString('hex')}`;
+}
 
 async function main() {
   console.log('🌱 Seeding database...');
@@ -97,7 +108,16 @@ async function main() {
   const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
 
   if (!existingAdmin) {
-    const passwordHash = await bcryptjs.hash('Admin123!', 12);
+    // Under Model A+ we never bcrypt-hash a password on the LMS side.
+    // The local `User.passwordHash` field is NOT NULL — we write a
+    // random `kc:<hex>` sentinel (same shape as AdminService.createUser
+    // and AuthService.ensureKeycloakUser) that can never authenticate
+    // via the legacy `POST /auth/login` 410 Gone stub. The actual
+    // password lives in Keycloak; the operator must create the same
+    // email in the sohaara realm and assign the `super_admin` realm
+    // role (e.g. via the admin panel, or via
+    // `aws-emulator/keycloak/scripts/seed-admin-user.sh`).
+    const passwordHash = kcSentinelHash();
     const user = await prisma.user.create({
       data: {
         email: adminEmail,
@@ -120,7 +140,9 @@ async function main() {
       });
     }
 
-    console.log('  ✓ Super admin created: admin@sohaara.com / Admin123!');
+    // Print a non-secret credential notice. The actual password is
+    // set in Keycloak, not here.
+    console.log('  ✓ Local super-admin user row created (id matches a Keycloak user that the operator must create separately — see aws-emulator/keycloak/scripts/seed-admin-user.sh).');
   }
 
   // Create feature flags
