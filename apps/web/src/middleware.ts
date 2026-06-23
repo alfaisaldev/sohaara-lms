@@ -17,6 +17,8 @@ function buildCsp(): string {
     `img-src 'self' blob: data: ${API_ORIGIN}`,
     `font-src 'self' data:`,
     `connect-src 'self' ${API_ORIGIN} ws: wss:`,
+    `frame-src 'self' ${API_ORIGIN}`,
+    `media-src 'self' ${API_ORIGIN} blob: data:`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
